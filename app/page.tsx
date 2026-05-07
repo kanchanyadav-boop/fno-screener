@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { detectPattern, PatternResult, Segment } from "./lib/pattern";
 import { ChartModal } from "./components/ChartModal";
 
@@ -173,6 +173,9 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [loadingSymbol, setLoadingSymbol] = useState("");
   const [chartSymbol, setChartSymbol] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const activeSymsRef = useRef<string[]>([]);
 
   const runScan = useCallback(async () => {
     const syms = input.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean);
@@ -203,7 +206,34 @@ export default function Home() {
     }
     setLoading(false);
     setLoadingSymbol("");
+    setLastUpdated(new Date());
+    activeSymsRef.current = input.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean);
   }, [input, interval]);
+
+  // Auto-refresh prices every 30 seconds
+  useEffect(() => {
+    if (results.length === 0) return;
+    const tick = async () => {
+      const syms = activeSymsRef.current.filter(Boolean);
+      if (!syms.length) return;
+      setRefreshing(true);
+      for (const sym of syms) {
+        try {
+          const r = await fetch(`/api/quote?symbol=${sym}&mode=price`);
+          const d = await r.json();
+          if (d.price) {
+            setResults((prev) => prev.map((x) =>
+              x.symbol === sym ? { ...x, price: d.price, prevClose: d.prevClose } : x
+            ));
+          }
+        } catch { /* silent */ }
+      }
+      setLastUpdated(new Date());
+      setRefreshing(false);
+    };
+    const id = setInterval(tick, 30_000);
+    return () => clearInterval(id);
+  }, [results.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const ORDER: Record<string, number> = { breakdown: 0, watch: 1, uptrend: 2, neutral: 3 };
   const sorted = [...results].sort((a, b) =>
@@ -261,7 +291,7 @@ export default function Home() {
           ))}
         </div>
 
-        {/* ── Legend ── */}
+        {/* ── Legend + live indicator ── */}
         {results.length > 0 && (
           <div className="mb-4 flex flex-wrap gap-4 text-xs text-gray-500">
             {Object.entries(BADGE).map(([key, val]) => (
@@ -270,7 +300,12 @@ export default function Home() {
                 {val.label}
               </span>
             ))}
-            <span className="ml-auto text-gray-400">Score = price(6) + vol(3)</span>
+            <span className="ml-auto flex items-center gap-1.5 text-gray-400">
+              {refreshing
+                ? <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse inline-block" />
+                : <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />}
+              {lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : ""}
+            </span>
           </div>
         )}
 

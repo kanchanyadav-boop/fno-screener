@@ -13,9 +13,12 @@ const HEADERS = {
   "Accept-Language": "en-US,en;q=0.9",
 };
 
-async function fetchYahoo(yahooSym: string, interval: string, range: string) {
+async function fetchYahoo(yahooSym: string, interval: string, range: string, noCache = false) {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSym}?interval=${interval}&range=${range}`;
-  const res = await fetch(url, { headers: HEADERS, next: { revalidate: 300 } });
+  const res = await fetch(url, {
+    headers: HEADERS,
+    ...(noCache ? { cache: "no-store" } : { next: { revalidate: 60 } }),
+  });
   if (!res.ok) throw new Error(`Yahoo ${res.status} for ${yahooSym}`);
   const json = await res.json();
   const result = json?.chart?.result?.[0];
@@ -32,6 +35,15 @@ export async function GET(req: NextRequest) {
   const yahooSym = toYahooSymbol(sym);
 
   try {
+    if (mode === "price") {
+      // Lightweight price-only refresh — no candle data
+      const result = await fetchYahoo(yahooSym, "1d", "2d", true);
+      return NextResponse.json({
+        price: result.meta.regularMarketPrice,
+        prevClose: result.meta.chartPreviousClose,
+      });
+    }
+
     if (mode === "screen") {
       // For screener: daily candles, 6 months
       const result = await fetchYahoo(yahooSym, "1d", "6mo");
@@ -60,10 +72,9 @@ export async function GET(req: NextRequest) {
     }
 
     if (mode === "chart") {
-      // For chart modal: fetch 1h, 4h (via 60m + 240m), 1d for last 10 days
       const [r1h, r1d] = await Promise.all([
-        fetchYahoo(yahooSym, "60m", "10d"),
-        fetchYahoo(yahooSym, "1d", "30d"),
+        fetchYahoo(yahooSym, "60m", "30d", true),
+        fetchYahoo(yahooSym, "1d", "1y", true),
       ]);
 
       const parseCandles = (result: any, agg = 1) => {
@@ -103,7 +114,7 @@ export async function GET(req: NextRequest) {
         prevClose: r1d.meta.chartPreviousClose,
         candles1h: parseCandles(r1h, 1),
         candles4h: parseCandles(r1h, 4),
-        candles1d: parseCandles(r1d, 1).slice(-30),
+        candles1d: parseCandles(r1d, 1),
       });
     }
 

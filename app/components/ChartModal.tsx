@@ -253,7 +253,7 @@ function CandleChart({
       const gridC = isDark ? "#1e293b" : "#f8fafc";
       const borderC = isDark ? "#334155" : "#e2e8f0";
 
-      const chartH = Math.min(380, Math.max(260, window.innerHeight * 0.45));
+      const chartH = el.clientHeight || Math.max(400, window.innerHeight * 0.6);
       const chart = LWC.createChart(el, {
         width: el.clientWidth,
         height: chartH,
@@ -386,7 +386,9 @@ function CandleChart({
 
       chart.timeScale().fitContent();
 
-      ro = new ResizeObserver(() => { if (!destroyed) chart.applyOptions({ width: el.clientWidth }); });
+      ro = new ResizeObserver(() => {
+        if (!destroyed) chart.applyOptions({ width: el.clientWidth, height: el.clientHeight || chartH });
+      });
       ro.observe(el);
     };
 
@@ -394,7 +396,7 @@ function CandleChart({
     return () => { destroyed = true; ro?.disconnect(); chartInstance?.remove(); };
   }, [candles, tf, opts, srLevels, manipEvents, sdZones]);
 
-  return <div ref={containerRef} className="w-full rounded-lg overflow-hidden min-h-[260px] md:min-h-[380px]" />;
+  return <div ref={containerRef} className="w-full h-full rounded-lg overflow-hidden" />;
 }
 
 // ─── Main Modal ───────────────────────────────────────────────────────────────
@@ -461,7 +463,7 @@ export function ChartModal({ symbol, onClose }: { symbol: string; onClose: () =>
       style={{ background: "rgba(0,0,0,0.7)", backdropFilter: "blur(3px)" }}
       onClick={e => e.target === e.currentTarget && onClose()}
     >
-      <div className="bg-white dark:bg-gray-900 rounded-t-2xl md:rounded-2xl shadow-2xl w-full max-w-4xl max-h-[94vh] flex flex-col">
+      <div className="bg-white dark:bg-gray-900 rounded-t-2xl md:rounded-2xl shadow-2xl w-full max-w-5xl h-[100dvh] md:h-auto md:max-h-[96vh] flex flex-col">
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-800 shrink-0">
@@ -508,12 +510,13 @@ export function ChartModal({ symbol, onClose }: { symbol: string; onClose: () =>
         </div>
 
         {/* Content */}
-        <div className="overflow-y-auto flex-1">
+        <div className={`flex-1 flex flex-col min-h-0 ${tab !== "chart" ? "overflow-y-auto" : "overflow-hidden"}`}>
 
           {/* ── CHART TAB ── */}
           {tab === "chart" && (
-            <div>
-              <div className="flex items-center gap-2 px-5 pt-4 pb-2 flex-wrap">
+            <div className="flex-1 flex flex-col min-h-0">
+              {/* Toolbar row */}
+              <div className="shrink-0 flex items-center gap-2 px-4 pt-3 pb-2 flex-wrap">
                 <div className="flex gap-1">
                   {(["1H", "4H", "1D"] as TF[]).map(t => (
                     <button key={t} onClick={() => setTf(t)}
@@ -521,32 +524,30 @@ export function ChartModal({ symbol, onClose }: { symbol: string; onClose: () =>
                     >{t}</button>
                   ))}
                 </div>
-                {/* Legend */}
                 <div className="hidden sm:flex flex-wrap gap-3 ml-2 text-[10px] text-gray-500">
                   <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 bg-amber-400" />EMA 20</span>
-                  <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 bg-green-500 border-dashed" />Support</span>
+                  <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 bg-green-500" />Support</span>
                   <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 bg-red-500" />Resistance</span>
                   <span className="flex items-center gap-1"><span className="inline-block w-4 h-3 rounded-sm bg-green-500/20 border border-green-500" />Demand</span>
                   <span className="flex items-center gap-1"><span className="inline-block w-4 h-3 rounded-sm bg-red-500/20 border border-red-500" />Supply</span>
-                  <span className="flex items-center gap-1"><span className="text-green-600 text-xs">▲</span> Trap</span>
                 </div>
               </div>
 
-              {/* SR levels summary */}
+              {/* Level badges — scrollable strip */}
               {srLevels.length > 0 && (
-                <div className="mx-5 mb-2 flex gap-1.5 overflow-x-auto pb-1">
+                <div className="shrink-0 mx-4 mb-2 flex gap-1.5 overflow-x-auto pb-1">
                   {srLevels.slice(0, 6).map(sr => (
-                    <span key={sr.label} className={`text-[10px] px-2 py-0.5 rounded-full font-mono border ${sr.type === "resistance" ? "bg-red-50 text-red-700 border-red-200" : "bg-green-50 text-green-700 border-green-200"}`}>
+                    <span key={sr.label} className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full font-mono border ${sr.type === "resistance" ? "bg-red-50 text-red-700 border-red-200" : "bg-green-50 text-green-700 border-green-200"}`}>
                       {sr.label} ₹{sr.price} ({sr.strength}×)
                     </span>
                   ))}
                   {opts && <>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full font-mono border bg-red-100 text-red-800 border-red-300">Max Call OI ₹{opts.maxCallOIStrike}</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full font-mono border bg-green-100 text-green-800 border-green-300">Max Put OI ₹{opts.maxPutOIStrike}</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full font-mono border bg-orange-100 text-orange-800 border-orange-300">Max Pain ₹{opts.maxPainStrike}</span>
+                    <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full font-mono border bg-red-100 text-red-800 border-red-300">Call OI ₹{opts.maxCallOIStrike}</span>
+                    <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full font-mono border bg-green-100 text-green-800 border-green-300">Put OI ₹{opts.maxPutOIStrike}</span>
+                    <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full font-mono border bg-orange-100 text-orange-800 border-orange-300">Pain ₹{opts.maxPainStrike}</span>
                   </>}
                   {sdZones.map((z, i) => (
-                    <span key={`sdz-${i}`} className={`text-[10px] px-2 py-0.5 rounded-full font-mono border ${
+                    <span key={`sdz-${i}`} className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full font-mono border ${
                       z.type === "demand"
                         ? "bg-green-50 text-green-800 border-green-400 dark:bg-green-950/30 dark:text-green-400"
                         : "bg-red-50 text-red-700 border-red-300 dark:bg-red-950/30 dark:text-red-400"
@@ -557,30 +558,31 @@ export function ChartModal({ symbol, onClose }: { symbol: string; onClose: () =>
                 </div>
               )}
 
-              <div className="px-4 pb-4">
+              {/* Chart — fills all remaining space */}
+              <div className="flex-1 min-h-0 px-4 pb-2">
                 {chartLoading && (
-                  <div className="flex items-center justify-center gap-3 text-sm text-gray-400" style={{ height: 380 }}>
+                  <div className="flex h-full items-center justify-center gap-3 text-sm text-gray-400">
                     <div className="w-5 h-5 border-2 border-gray-200 border-t-gray-600 rounded-full animate-spin" /> Loading chart...
                   </div>
                 )}
-                {chartError && <div className="flex items-center justify-center text-sm text-red-500" style={{ height: 380 }}>{chartError}</div>}
+                {chartError && <div className="flex h-full items-center justify-center text-sm text-red-500">{chartError}</div>}
                 {!chartLoading && !chartError && (
                   <CandleChart key={tf} candles={candles} tf={tf} opts={opts} srLevels={srLevels} manipEvents={manipEvents} sdZones={sdZones} />
                 )}
               </div>
 
-              {/* Stats row */}
+              {/* Compact stats row — hidden on small screens */}
               {!chartLoading && !chartError && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 px-5 pb-5">
+                <div className="shrink-0 hidden sm:grid grid-cols-4 gap-2 px-4 pb-4">
                   {[
                     { label: "EMA 20", v: (() => { const e = calcEMA(sorted as any, 20); return e.length ? `₹${e[e.length - 1].value.toFixed(2)}` : "—"; })() },
-                    { label: "Avg Volume", v: fv(sorted.length ? sorted.reduce((s, c) => s + c.v, 0) / sorted.length : 0) },
-                    { label: "Signals on TF", v: `${manipEvents.length} (${manipEvents.filter(e => e.severity === "high").length} high)` },
-                    { label: "S/R Levels", v: `${srLevels.filter(s => s.type === "support").length}S / ${srLevels.filter(s => s.type === "resistance").length}R  ·  ${sdZones.filter(z => z.type === "demand").length}D ${sdZones.filter(z => z.type === "supply").length}Sz` },
+                    { label: "Avg Vol", v: fv(sorted.length ? sorted.reduce((s, c) => s + c.v, 0) / sorted.length : 0) },
+                    { label: "Signals", v: `${manipEvents.length} (${manipEvents.filter(e => e.severity === "high").length} high)` },
+                    { label: "S/R · Zones", v: `${srLevels.filter(s => s.type === "support").length}S ${srLevels.filter(s => s.type === "resistance").length}R · ${sdZones.filter(z => z.type === "demand").length}D ${sdZones.filter(z => z.type === "supply").length}Sz` },
                   ].map(({ label, v }) => (
-                    <div key={label} className="bg-gray-50 dark:bg-gray-800 rounded-xl p-3">
-                      <div className="text-[10px] text-gray-400 mb-1">{label}</div>
-                      <div className="text-sm font-mono font-semibold text-gray-800 dark:text-gray-100">{v}</div>
+                    <div key={label} className="bg-gray-50 dark:bg-gray-800 rounded-xl p-2.5">
+                      <div className="text-[10px] text-gray-400 mb-0.5">{label}</div>
+                      <div className="text-xs font-mono font-semibold text-gray-800 dark:text-gray-100">{v}</div>
                     </div>
                   ))}
                 </div>
@@ -590,14 +592,14 @@ export function ChartModal({ symbol, onClose }: { symbol: string; onClose: () =>
 
           {/* ── SIGNALS TAB ── */}
           {tab === "signals" && (
-            <div>
-              <div className="flex gap-1 px-5 pt-4 pb-2">
+            <div className="flex-1 flex flex-col min-h-0 overflow-y-auto">
+              <div className="shrink-0 flex gap-1 px-5 pt-4 pb-2">
                 {(["1H", "4H", "1D"] as TF[]).map(t => (
                   <button key={t} onClick={() => setTf(t)}
                     className={`px-3 py-1.5 text-sm font-mono rounded-lg transition-all ${tf === t ? "bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-bold" : "text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"}`}
                   >{t}</button>
                 ))}
-                <span className="hidden sm:inline ml-2 self-center text-xs text-gray-400">Showing manipulation signals on {tf} timeframe</span>
+                <span className="hidden sm:inline ml-2 self-center text-xs text-gray-400">Manipulation signals · {tf}</span>
               </div>
               {chartLoading
                 ? <div className="flex items-center justify-center gap-2 py-16 text-sm text-gray-400"><div className="w-4 h-4 border-2 border-gray-200 border-t-gray-600 rounded-full animate-spin" /> Loading...</div>
@@ -608,7 +610,7 @@ export function ChartModal({ symbol, onClose }: { symbol: string; onClose: () =>
 
           {/* ── OI TAB ── */}
           {tab === "oi" && (
-            <div className="px-5 py-4">
+            <div className="flex-1 overflow-y-auto px-5 py-4">
               {optsLoading && (
                 <div className="flex items-center justify-center gap-3 text-sm text-gray-400 py-16">
                   <div className="w-5 h-5 border-2 border-gray-200 border-t-gray-600 rounded-full animate-spin" /> Fetching NSE option chain...
