@@ -47,20 +47,48 @@ const NSE_HEADERS = {
 };
 
 async function getNSECookie(): Promise<string> {
-  const res = await fetch("https://www.nseindia.com/option-chain", {
+  // Step 1: hit main site to get initial cookies
+  const r1 = await fetch("https://www.nseindia.com", {
     headers: {
       "User-Agent": NSE_HEADERS["User-Agent"],
-      Accept:
-        "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9",
     },
+    cache: "no-store",
   });
-  const cookies = res.headers.get("set-cookie") || "";
-  // Extract relevant cookie values
-  const cookieParts = cookies
-    .split(",")
+
+  // Step 2: hit option-chain page with those cookies to get session cookies
+  const jar1 = parseCookieHeader(r1.headers);
+  const r2 = await fetch("https://www.nseindia.com/option-chain", {
+    headers: {
+      "User-Agent": NSE_HEADERS["User-Agent"],
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9",
+      Referer: "https://www.nseindia.com",
+      Cookie: jar1,
+    },
+    cache: "no-store",
+  });
+
+  const jar2 = parseCookieHeader(r2.headers);
+  // Merge: jar2 values override jar1
+  const merged = new Map<string, string>();
+  for (const part of [...jar1.split("; "), ...jar2.split("; ")]) {
+    const key = part.split("=")[0].trim();
+    if (key) merged.set(key, part.trim());
+  }
+  return Array.from(merged.values()).join("; ");
+}
+
+function parseCookieHeader(headers: Headers): string {
+  // getSetCookie() handles commas inside dates correctly (Node 18+)
+  const raw: string[] = typeof (headers as any).getSetCookie === "function"
+    ? (headers as any).getSetCookie()
+    : (headers.get("set-cookie") || "").split(/,(?=\s*\w+=)/);
+  return raw
     .map((c) => c.split(";")[0].trim())
-    .filter((c) => c.includes("="));
-  return cookieParts.join("; ");
+    .filter((c) => c.includes("="))
+    .join("; ");
 }
 
 function isIndex(symbol: string): boolean {
@@ -131,7 +159,8 @@ export async function GET(req: NextRequest) {
     const json = await res.json();
 
     if (!json?.records?.data) {
-      throw new Error("Invalid option chain response");
+      const preview = JSON.stringify(json).slice(0, 120);
+      throw new Error(`Invalid option chain response: ${preview}`);
     }
 
     const records = json.records;
