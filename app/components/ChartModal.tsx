@@ -253,9 +253,10 @@ function CandleChart({
       const gridC = isDark ? "#1e293b" : "#f8fafc";
       const borderC = isDark ? "#334155" : "#e2e8f0";
 
+      const chartH = Math.min(380, Math.max(260, window.innerHeight * 0.45));
       const chart = LWC.createChart(el, {
         width: el.clientWidth,
-        height: 380,
+        height: chartH,
         layout: { background: { color: bg }, textColor: textC },
         grid: { vertLines: { color: gridC }, horzLines: { color: gridC } },
         crosshair: { mode: LWC.CrosshairMode.Normal },
@@ -393,7 +394,7 @@ function CandleChart({
     return () => { destroyed = true; ro?.disconnect(); chartInstance?.remove(); };
   }, [candles, tf, opts, srLevels, manipEvents, sdZones]);
 
-  return <div ref={containerRef} className="w-full rounded-lg overflow-hidden" style={{ minHeight: 380 }} />;
+  return <div ref={containerRef} className="w-full rounded-lg overflow-hidden min-h-[260px] md:min-h-[380px]" />;
 }
 
 // ─── Main Modal ───────────────────────────────────────────────────────────────
@@ -471,9 +472,9 @@ export function ChartModal({ symbol, onClose }: { symbol: string; onClose: () =>
               <span className={`font-mono text-sm font-semibold px-2 py-0.5 rounded ${chg >= 0 ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>{chg >= 0 ? "+" : ""}{chg.toFixed(2)}%</span>
             </>}
             {opts && !optsLoading && <>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200 font-mono">R ₹{opts.maxCallOIStrike}</span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200 font-mono">S ₹{opts.maxPutOIStrike}</span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 border border-orange-200 font-mono">Pain ₹{opts.maxPainStrike}</span>
+              <span className="hidden sm:inline text-[10px] px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200 font-mono">R ₹{opts.maxCallOIStrike}</span>
+              <span className="hidden sm:inline text-[10px] px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200 font-mono">S ₹{opts.maxPutOIStrike}</span>
+              <span className="hidden sm:inline text-[10px] px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 border border-orange-200 font-mono">Pain ₹{opts.maxPainStrike}</span>
             </>}
             {highSeverityCount > 0 && (
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 border border-purple-200 font-semibold animate-pulse">
@@ -492,7 +493,7 @@ export function ChartModal({ symbol, onClose }: { symbol: string; onClose: () =>
             ["oi", "🔢 OI"],
           ] as [Tab, string][]).map(([t, label]) => (
             <button key={t} onClick={() => setTab(t)}
-              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${tab === t ? "border-gray-900 dark:border-white text-gray-900 dark:text-white" : "border-transparent text-gray-400 hover:text-gray-600"}`}
+              className={`px-3 py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-colors -mb-px whitespace-nowrap ${tab === t ? "border-gray-900 dark:border-white text-gray-900 dark:text-white" : "border-transparent text-gray-400 hover:text-gray-600"}`}
             >{label}</button>
           ))}
           {opts && opts.expiryDates.length > 0 && tab === "oi" && (
@@ -521,20 +522,19 @@ export function ChartModal({ symbol, onClose }: { symbol: string; onClose: () =>
                   ))}
                 </div>
                 {/* Legend */}
-                <div className="flex flex-wrap gap-3 ml-2 text-[10px] text-gray-500">
+                <div className="hidden sm:flex flex-wrap gap-3 ml-2 text-[10px] text-gray-500">
                   <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 bg-amber-400" />EMA 20</span>
                   <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 bg-green-500 border-dashed" />Support</span>
                   <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 bg-red-500" />Resistance</span>
                   <span className="flex items-center gap-1"><span className="inline-block w-4 h-3 rounded-sm bg-green-500/20 border border-green-500" />Demand</span>
                   <span className="flex items-center gap-1"><span className="inline-block w-4 h-3 rounded-sm bg-red-500/20 border border-red-500" />Supply</span>
-                  <span className="flex items-center gap-1"><span className="text-green-600 text-xs">▲</span> Bear Trap</span>
-                  <span className="flex items-center gap-1"><span className="text-red-600 text-xs">▼</span> Bull Trap</span>
+                  <span className="flex items-center gap-1"><span className="text-green-600 text-xs">▲</span> Trap</span>
                 </div>
               </div>
 
               {/* SR levels summary */}
               {srLevels.length > 0 && (
-                <div className="mx-5 mb-2 flex flex-wrap gap-1.5">
+                <div className="mx-5 mb-2 flex gap-1.5 overflow-x-auto pb-1">
                   {srLevels.slice(0, 6).map(sr => (
                     <span key={sr.label} className={`text-[10px] px-2 py-0.5 rounded-full font-mono border ${sr.type === "resistance" ? "bg-red-50 text-red-700 border-red-200" : "bg-green-50 text-green-700 border-green-200"}`}>
                       {sr.label} ₹{sr.price} ({sr.strength}×)
@@ -597,7 +597,7 @@ export function ChartModal({ symbol, onClose }: { symbol: string; onClose: () =>
                     className={`px-3 py-1.5 text-sm font-mono rounded-lg transition-all ${tf === t ? "bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-bold" : "text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"}`}
                   >{t}</button>
                 ))}
-                <span className="ml-2 self-center text-xs text-gray-400">Showing manipulation signals on {tf} timeframe</span>
+                <span className="hidden sm:inline ml-2 self-center text-xs text-gray-400">Showing manipulation signals on {tf} timeframe</span>
               </div>
               {chartLoading
                 ? <div className="flex items-center justify-center gap-2 py-16 text-sm text-gray-400"><div className="w-4 h-4 border-2 border-gray-200 border-t-gray-600 rounded-full animate-spin" /> Loading...</div>
