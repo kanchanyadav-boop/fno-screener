@@ -371,7 +371,7 @@ export function ChartModal({ symbol, onClose }: { symbol: string; onClose: () =>
   const loadOpts = useCallback((expiry = "") => {
     setOptsLoading(true); setOptsError("");
     fetch(`/api/options?symbol=${symbol}${expiry ? `&expiry=${encodeURIComponent(expiry)}` : ""}`)
-      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then(r => r.json())
       .then(d => { if (d.error) throw new Error(d.error); setOpts(d); setSelectedExpiry(d.selectedExpiry); })
       .catch(e => setOptsError(e.message))
       .finally(() => setOptsLoading(false));

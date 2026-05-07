@@ -121,7 +121,7 @@ export async function GET(req: NextRequest) {
         ...NSE_HEADERS,
         ...(cookie ? { Cookie: cookie } : {}),
       },
-      next: { revalidate: 120 }, // cache 2 min
+      cache: "no-store",
     });
 
     if (!res.ok) {
