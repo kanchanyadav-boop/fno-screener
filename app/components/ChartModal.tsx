@@ -20,6 +20,13 @@ function fv(v: number) {
   return v.toString();
 }
 function pct(v: number, total: number) { return total ? Math.round(v / total * 100) : 0; }
+// Format expiry: Unix timestamp string → "29 May '25", plain string passes through
+function fmtExpiry(d: string) {
+  if (/^\d{9,}$/.test(d)) {
+    return new Date(parseInt(d) * 1000).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" });
+  }
+  return d;
+}
 
 // ─── OI Panel ─────────────────────────────────────────────────────────────────
 function OIPanel({ opts, price }: { opts: OptionsData; price: number }) {
@@ -493,7 +500,7 @@ export function ChartModal({ symbol, onClose }: { symbol: string; onClose: () =>
               <span className="text-xs text-gray-400">Expiry:</span>
               <select className="text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-2 py-1 font-mono"
                 value={selectedExpiry} onChange={e => { setSelectedExpiry(e.target.value); loadOpts(e.target.value); }}>
-                {opts.expiryDates.map(d => <option key={d} value={d}>{d}</option>)}
+                {opts.expiryDates.map(d => <option key={d} value={d}>{fmtExpiry(d)}</option>)}
               </select>
             </div>
           )}
@@ -630,7 +637,7 @@ export function ChartModal({ symbol, onClose }: { symbol: string; onClose: () =>
                   </div>
                   <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">OI by Strike (±10 ATM)</h3>
                   <OIPanel opts={opts} price={price} />
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-2 mt-5">Option Chain — {opts.selectedExpiry}</h3>
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-2 mt-5">Option Chain — {fmtExpiry(opts.selectedExpiry)}</h3>
                   <OITable opts={opts} price={price} />
                 </>
               )}
