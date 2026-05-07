@@ -61,7 +61,10 @@ function MiniChart({ segments, breakdown }: { segments: Segment[]; breakdown: bo
   );
 }
 
-function ResultCard({ r, onChartClick }: { r: StockResult; onChartClick: () => void }) {
+type FlashDir = "up" | "down";
+interface Flash { dir: FlashDir; n: number; }
+
+function ResultCard({ r, onChartClick, flash }: { r: StockResult; onChartClick: () => void; flash?: Flash }) {
   if (r.error) {
     return (
       <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-4 border-l-4 border-l-gray-300">
@@ -80,9 +83,14 @@ function ResultCard({ r, onChartClick }: { r: StockResult; onChartClick: () => v
 
   return (
     <div
-      className={`bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-5 border-l-4 ${b.border} cursor-pointer hover:shadow-md transition-shadow group`}
+      className={`relative overflow-hidden bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-5 border-l-4 ${b.border} cursor-pointer hover:shadow-md transition-shadow group`}
       onClick={onChartClick}
     >
+      {/* Price tick flash overlay — key forces animation restart on each tick */}
+      {flash && (
+        <div key={flash.n} className={`pointer-events-none absolute inset-0 rounded-xl ${flash.dir === "up" ? "tick-up" : "tick-down"}`} />
+      )}
+
       {/* ── Row 1: Symbol / badge / price ── */}
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-2 flex-wrap">
@@ -93,7 +101,9 @@ function ResultCard({ r, onChartClick }: { r: StockResult; onChartClick: () => v
           <span className="text-[10px] text-gray-400 hidden group-hover:inline-block">↗ chart</span>
         </div>
         <div className="text-right shrink-0 ml-3">
-          <div className="font-mono font-semibold text-sm text-gray-900 dark:text-white">₹{r.price.toFixed(2)}</div>
+          <div className={`font-mono font-semibold text-sm transition-colors duration-300 ${
+            flash?.dir === "up" ? "text-emerald-500" : flash?.dir === "down" ? "text-red-500" : "text-gray-900 dark:text-white"
+          }`}>₹{r.price.toFixed(2)}</div>
           <div className={`font-mono text-xs mt-0.5 ${chg >= 0 ? "text-emerald-600" : "text-red-500"}`}>
             {chg >= 0 ? "+" : ""}{chg.toFixed(2)}%
           </div>
@@ -174,8 +184,10 @@ export default function Home() {
   const [loadingSymbol, setLoadingSymbol] = useState("");
   const [chartSymbol, setChartSymbol] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
+  const [flashes, setFlashes] = useState<Record<string, Flash>>({});
   const activeSymsRef = useRef<string[]>([]);
+  const prevPricesRef = useRef<Record<string, number>>({});
+  const flashTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   const runScan = useCallback(async () => {
     const syms = input.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean);
@@ -207,31 +219,47 @@ export default function Home() {
     setLoading(false);
     setLoadingSymbol("");
     setLastUpdated(new Date());
-    activeSymsRef.current = input.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean);
+    const scannedSyms = input.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean);
+    activeSymsRef.current = scannedSyms;
+    // Seed prev-prices so first tick compares correctly
+    setResults(prev => {
+      prev.forEach(r => { if (r.price) prevPricesRef.current[r.symbol] = r.price; });
+      return prev;
+    });
   }, [input, interval]);
 
-  // Auto-refresh prices every 30 seconds
+  // Live price refresh — 3-second batch poll
   useEffect(() => {
     if (results.length === 0) return;
+
+    const flashSym = (sym: string, dir: FlashDir) => {
+      if (flashTimers.current[sym]) clearTimeout(flashTimers.current[sym]);
+      setFlashes(f => ({ ...f, [sym]: { dir, n: (f[sym]?.n ?? 0) + 1 } }));
+      flashTimers.current[sym] = setTimeout(() => {
+        setFlashes(f => { const n = { ...f }; delete n[sym]; return n; });
+      }, 900);
+    };
+
     const tick = async () => {
       const syms = activeSymsRef.current.filter(Boolean);
       if (!syms.length) return;
-      setRefreshing(true);
-      for (const sym of syms) {
-        try {
-          const r = await fetch(`/api/quote?symbol=${sym}&mode=price`);
-          const d = await r.json();
-          if (d.price) {
-            setResults((prev) => prev.map((x) =>
-              x.symbol === sym ? { ...x, price: d.price, prevClose: d.prevClose } : x
-            ));
-          }
-        } catch { /* silent */ }
-      }
-      setLastUpdated(new Date());
-      setRefreshing(false);
+      try {
+        const r = await fetch(`/api/prices?symbols=${syms.join(",")}`);
+        const data: Record<string, { price: number; prevClose: number }> = await r.json();
+        if ((data as any).error) return;
+        setResults(prev => prev.map(x => {
+          const d = data[x.symbol];
+          if (!d?.price) return x;
+          const old = prevPricesRef.current[x.symbol];
+          if (old !== undefined && d.price !== old) flashSym(x.symbol, d.price > old ? "up" : "down");
+          prevPricesRef.current[x.symbol] = d.price;
+          return { ...x, price: d.price, prevClose: d.prevClose };
+        }));
+        setLastUpdated(new Date());
+      } catch { /* silent */ }
     };
-    const id = setInterval(tick, 30_000);
+
+    const id = setInterval(tick, 3_000);
     return () => clearInterval(id);
   }, [results.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -301,10 +329,11 @@ export default function Home() {
               </span>
             ))}
             <span className="ml-auto flex items-center gap-1.5 text-gray-400">
-              {refreshing
-                ? <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse inline-block" />
-                : <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />}
-              {lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : ""}
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse inline-block" />
+              <span className="text-emerald-500 font-semibold text-[11px]">LIVE</span>
+              {lastUpdated && (
+                <span className="text-gray-400 text-[10px]">{lastUpdated.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
+              )}
             </span>
           </div>
         )}
@@ -320,7 +349,7 @@ export default function Home() {
         {/* ── Results ── */}
         <div className="space-y-3">
           {sorted.map((r) => (
-            <ResultCard key={r.symbol} r={r} onChartClick={() => setChartSymbol(r.symbol)} />
+            <ResultCard key={r.symbol} r={r} flash={flashes[r.symbol]} onChartClick={() => setChartSymbol(r.symbol)} />
           ))}
         </div>
 
