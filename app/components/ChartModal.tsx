@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { calcEMA, calcSRLevels, detectManipulation, ManipulationEvent, SRLevel } from "../lib/technicals";
+import { calcEMA, calcSRLevels, detectManipulation, calcSDZones, ManipulationEvent, SRLevel, SDZone } from "../lib/technicals";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface RawCandle { time: number; o: number; h: number; l: number; c: number; v: number; }
@@ -217,13 +217,14 @@ function SignalsPanel({ candles, symbol }: { candles: RawCandle[]; symbol: strin
 
 // ─── Candlestick Chart ─────────────────────────────────────────────────────────
 function CandleChart({
-  candles, tf, opts, srLevels, manipEvents,
+  candles, tf, opts, srLevels, manipEvents, sdZones,
 }: {
   candles: RawCandle[];
   tf: TF;
   opts: OptionsData | null;
   srLevels: SRLevel[];
   manipEvents: ManipulationEvent[];
+  sdZones: SDZone[];
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -310,6 +311,47 @@ function CandleChart({
         }
       }
 
+      // ── Supply / Demand Zones ──
+      for (const zone of sdZones) {
+        const isDemand = zone.type === "demand";
+        const lineColor = isDemand ? "#10b981" : "#ef4444";
+        const alpha = zone.fresh ? 0.18 : 0.09;
+        const fill = isDemand ? `rgba(16,185,129,${alpha})` : `rgba(239,68,68,${alpha})`;
+
+        const zoneSeries = chart.addSeries(LWC.BaselineSeries, {
+          baseValue: { type: "price", price: zone.bottom },
+          topLineColor: lineColor,
+          topLineWidth: 1,
+          topFillColor1: fill,
+          topFillColor2: fill,
+          bottomLineColor: "rgba(0,0,0,0)",
+          bottomLineWidth: 1,
+          bottomFillColor1: "rgba(0,0,0,0)",
+          bottomFillColor2: "rgba(0,0,0,0)",
+          crosshairMarkerVisible: false,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          title: "",
+        });
+
+        const t0 = (sorted.find(c => c.time >= zone.startTime) ?? sorted[0]).time;
+        const t1 = sorted[sorted.length - 1].time;
+        zoneSeries.setData([
+          { time: t0 as any, value: zone.top },
+          { time: t1 as any, value: zone.top },
+        ]);
+
+        // Bottom border of zone as a dashed price line
+        candleSeries.createPriceLine({
+          price: zone.bottom,
+          color: lineColor + "80",
+          lineWidth: 1,
+          lineStyle: 2,
+          axisLabelVisible: false,
+          title: "",
+        });
+      }
+
       // ── Manipulation Markers ──
       if (manipEvents.length > 0) {
         const isBull = (t: string) => ["bear_trap", "stop_hunt_low", "fakeout_down"].includes(t);
@@ -342,7 +384,7 @@ function CandleChart({
 
     load();
     return () => { destroyed = true; ro?.disconnect(); chartInstance?.remove(); };
-  }, [candles, tf, opts, srLevels, manipEvents]);
+  }, [candles, tf, opts, srLevels, manipEvents, sdZones]);
 
   return <div ref={containerRef} className="w-full rounded-lg overflow-hidden" style={{ minHeight: 380 }} />;
 }
@@ -398,6 +440,7 @@ export function ChartModal({ symbol, onClose }: { symbol: string; onClose: () =>
   const sorted = useMemo(() => [...candles].sort((a, b) => a.time - b.time), [candles]);
   const srLevels = useMemo(() => calcSRLevels(sorted as any), [sorted]);
   const manipEvents = useMemo(() => detectManipulation(sorted as any), [sorted]);
+  const sdZones = useMemo(() => calcSDZones(sorted as any), [sorted]);
   const highSeverityCount = manipEvents.filter(e => e.severity === "high").length;
 
   const allCandles1H = useMemo(() =>
@@ -475,8 +518,10 @@ export function ChartModal({ symbol, onClose }: { symbol: string; onClose: () =>
                   <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 bg-amber-400" />EMA 20</span>
                   <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 bg-green-500 border-dashed" />Support</span>
                   <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 bg-red-500" />Resistance</span>
-                  <span className="flex items-center gap-1"><span className="text-green-600 text-xs">▲</span> Bear Trap / Stop Hunt</span>
-                  <span className="flex items-center gap-1"><span className="text-red-600 text-xs">▼</span> Bull Trap / Stop Hunt</span>
+                  <span className="flex items-center gap-1"><span className="inline-block w-4 h-3 rounded-sm bg-green-500/20 border border-green-500" />Demand</span>
+                  <span className="flex items-center gap-1"><span className="inline-block w-4 h-3 rounded-sm bg-red-500/20 border border-red-500" />Supply</span>
+                  <span className="flex items-center gap-1"><span className="text-green-600 text-xs">▲</span> Bear Trap</span>
+                  <span className="flex items-center gap-1"><span className="text-red-600 text-xs">▼</span> Bull Trap</span>
                 </div>
               </div>
 
@@ -493,6 +538,15 @@ export function ChartModal({ symbol, onClose }: { symbol: string; onClose: () =>
                     <span className="text-[10px] px-2 py-0.5 rounded-full font-mono border bg-green-100 text-green-800 border-green-300">Max Put OI ₹{opts.maxPutOIStrike}</span>
                     <span className="text-[10px] px-2 py-0.5 rounded-full font-mono border bg-orange-100 text-orange-800 border-orange-300">Max Pain ₹{opts.maxPainStrike}</span>
                   </>}
+                  {sdZones.map((z, i) => (
+                    <span key={`sdz-${i}`} className={`text-[10px] px-2 py-0.5 rounded-full font-mono border ${
+                      z.type === "demand"
+                        ? "bg-green-50 text-green-800 border-green-400 dark:bg-green-950/30 dark:text-green-400"
+                        : "bg-red-50 text-red-700 border-red-300 dark:bg-red-950/30 dark:text-red-400"
+                    }`}>
+                      {z.type === "demand" ? "D" : "S"} ₹{z.bottom.toFixed(0)}–{z.top.toFixed(0)}{z.fresh ? " ✦" : ""}
+                    </span>
+                  ))}
                 </div>
               )}
 
@@ -504,7 +558,7 @@ export function ChartModal({ symbol, onClose }: { symbol: string; onClose: () =>
                 )}
                 {chartError && <div className="flex items-center justify-center text-sm text-red-500" style={{ height: 380 }}>{chartError}</div>}
                 {!chartLoading && !chartError && (
-                  <CandleChart key={tf} candles={candles} tf={tf} opts={opts} srLevels={srLevels} manipEvents={manipEvents} />
+                  <CandleChart key={tf} candles={candles} tf={tf} opts={opts} srLevels={srLevels} manipEvents={manipEvents} sdZones={sdZones} />
                 )}
               </div>
 
@@ -515,7 +569,7 @@ export function ChartModal({ symbol, onClose }: { symbol: string; onClose: () =>
                     { label: "EMA 20", v: (() => { const e = calcEMA(sorted as any, 20); return e.length ? `₹${e[e.length - 1].value.toFixed(2)}` : "—"; })() },
                     { label: "Avg Volume", v: fv(sorted.length ? sorted.reduce((s, c) => s + c.v, 0) / sorted.length : 0) },
                     { label: "Signals on TF", v: `${manipEvents.length} (${manipEvents.filter(e => e.severity === "high").length} high)` },
-                    { label: "S/R Levels", v: `${srLevels.filter(s => s.type === "support").length}S / ${srLevels.filter(s => s.type === "resistance").length}R` },
+                    { label: "S/R Levels", v: `${srLevels.filter(s => s.type === "support").length}S / ${srLevels.filter(s => s.type === "resistance").length}R  ·  ${sdZones.filter(z => z.type === "demand").length}D ${sdZones.filter(z => z.type === "supply").length}Sz` },
                   ].map(({ label, v }) => (
                     <div key={label} className="bg-gray-50 dark:bg-gray-800 rounded-xl p-3">
                       <div className="text-[10px] text-gray-400 mb-1">{label}</div>

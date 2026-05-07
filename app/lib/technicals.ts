@@ -293,3 +293,60 @@ export function detectManipulation(candles: Candle[]): ManipulationEvent[] {
 function severityRank(s: ManipulationEvent["severity"]): number {
   return s === "high" ? 3 : s === "medium" ? 2 : 1;
 }
+
+// ─── Supply & Demand Zones ─────────────────────────────────────────────────────
+
+export interface SDZone {
+  top: number;
+  bottom: number;
+  type: "supply" | "demand";
+  strength: number; // 1–3 based on explosion candle size relative to ATR
+  startTime: number;
+  fresh: boolean; // price has not re-entered the zone since formation
+}
+
+export function calcSDZones(candles: Candle[], maxZones = 3): SDZone[] {
+  if (candles.length < 10) return [];
+
+  const recent = candles.slice(-Math.min(candles.length, 100));
+  const lastClose = recent[recent.length - 1].c;
+  const atr = recent.slice(-14).reduce((s, c) => s + (c.h - c.l), 0) / Math.min(14, recent.length);
+  if (atr === 0) return [];
+
+  type Raw = SDZone & { dist: number };
+  const rawZones: Raw[] = [];
+
+  for (let i = 0; i < recent.length - 1; i++) {
+    const base = recent[i];
+    const exp = recent[i + 1];
+    const expBody = Math.abs(exp.c - exp.o);
+    const baseBody = Math.abs(base.c - base.o);
+
+    // Explosion candle must be large; base candle must be smaller
+    if (expBody < atr * 0.75) continue;
+    if (baseBody >= expBody * 0.75) continue;
+
+    const top = base.h;
+    const bottom = base.l;
+    if (top - bottom < atr * 0.1) continue;
+
+    const isBull = exp.c > exp.o;
+    const strength: 1 | 2 | 3 = expBody > atr * 2 ? 3 : expBody > atr * 1.3 ? 2 : 1;
+    const later = recent.slice(i + 2);
+
+    if (isBull && top < lastClose) {
+      // Demand zone (Drop-Base-Rally): below current price
+      const fresh = !later.some(c => c.l < bottom);
+      rawZones.push({ top, bottom, type: "demand", strength, startTime: base.time, fresh, dist: lastClose - (top + bottom) / 2 });
+    } else if (!isBull && bottom > lastClose) {
+      // Supply zone (Rally-Base-Drop): above current price
+      const fresh = !later.some(c => c.h > top);
+      rawZones.push({ top, bottom, type: "supply", strength, startTime: base.time, fresh, dist: (top + bottom) / 2 - lastClose });
+    }
+  }
+
+  const pick = (type: SDZone["type"]) =>
+    rawZones.filter(z => z.type === type).sort((a, b) => a.dist - b.dist).slice(0, maxZones);
+
+  return [...pick("supply"), ...pick("demand")].map(({ dist, ...z }) => z);
+}
