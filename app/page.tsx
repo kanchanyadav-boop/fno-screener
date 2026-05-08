@@ -213,7 +213,7 @@ export default function Home() {
         const pattern = detectPattern(data.candles);
         setResults((prev) => [...prev, { symbol: sym, price: data.price, prevClose: data.prevClose, changePct: data.changePct ?? 0, pattern, segments: pattern.segments }]);
       } catch (e: any) {
-        setResults((prev) => [...prev, { symbol: sym, price: 0, prevClose: 0, pattern: {} as PatternResult, segments: [], error: String(e) }]);
+        setResults((prev) => [...prev, { symbol: sym, price: 0, prevClose: 0, changePct: 0, pattern: {} as PatternResult, segments: [], error: String(e) }]);
       }
       await new Promise((r) => setTimeout(r, 300));
     }
