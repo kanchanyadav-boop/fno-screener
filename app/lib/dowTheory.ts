@@ -1,5 +1,65 @@
 import { Candle } from "./pattern";
 
+// ─── Chart marker type (works with RawCandle time:number) ──────────────────────
+export interface DowRawMarker {
+  time: number;
+  price: number;
+  isHigh: boolean; // true = swing high, false = swing low
+  isUp: boolean;   // true = HH or HL (up move), false = LH or LL (down move)
+}
+
+/**
+ * Detects swing high/low pivot points and labels each as HH/LH or HL/LL.
+ * Designed for RawCandle data (time: number) used by lightweight-charts.
+ * `limit` controls how many recent markers to return (avoids clutter).
+ */
+export function findDowMarkers(
+  candles: { time: number; h: number; l: number }[],
+  lookback = 5,
+  limit = 10
+): DowRawMarker[] {
+  const allHighs: { time: number; price: number }[] = [];
+  const allLows: { time: number; price: number }[] = [];
+
+  for (let i = lookback; i < candles.length - lookback; i++) {
+    const c = candles[i];
+    let isHigh = true;
+    let isLow = true;
+    for (let j = 1; j <= lookback; j++) {
+      if (candles[i - j].h >= c.h || candles[i + j].h >= c.h) isHigh = false;
+      if (candles[i - j].l <= c.l || candles[i + j].l <= c.l) isLow = false;
+    }
+    if (isHigh) allHighs.push({ time: c.time, price: c.h });
+    if (isLow) allLows.push({ time: c.time, price: c.l });
+  }
+
+  // Take limit+1 so every visible point has a prior to compare against
+  const recentH = allHighs.slice(-(limit + 1));
+  const recentL = allLows.slice(-(limit + 1));
+
+  const markers: DowRawMarker[] = [];
+
+  for (let i = 1; i < recentH.length; i++) {
+    markers.push({
+      time: recentH[i].time,
+      price: recentH[i].price,
+      isHigh: true,
+      isUp: recentH[i].price > recentH[i - 1].price,
+    });
+  }
+
+  for (let i = 1; i < recentL.length; i++) {
+    markers.push({
+      time: recentL[i].time,
+      price: recentL[i].price,
+      isHigh: false,
+      isUp: recentL[i].price > recentL[i - 1].price,
+    });
+  }
+
+  return markers.sort((a, b) => a.time - b.time);
+}
+
 export interface SwingPoint {
   date: string;
   price: number;

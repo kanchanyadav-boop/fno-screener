@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { calcEMA, calcSRLevels, detectManipulation, calcSDZones, ManipulationEvent, SRLevel, SDZone } from "../lib/technicals";
+import { findDowMarkers, analyzeDowTheory } from "../lib/dowTheory";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface RawCandle { time: number; o: number; h: number; l: number; c: number; v: number; }
-interface ChartData { symbol: string; price: number; prevClose: number; candles1h: RawCandle[]; candles4h: RawCandle[]; candles1d: RawCandle[]; }
+interface ChartData { symbol: string; price: number; prevClose: number; candles5m: RawCandle[]; candles1h: RawCandle[]; candles4h: RawCandle[]; candles1d: RawCandle[]; candles1w: RawCandle[]; }
 interface StrikeOI { strike: number; callOI: number; putOI: number; callOIChange: number; putOIChange: number; callVolume: number; putVolume: number; callIV: number; putIV: number; callLTP: number; putLTP: number; }
 interface OptionsData { symbol: string; underlyingValue: number; expiryDates: string[]; selectedExpiry: string; strikes: StrikeOI[]; maxCallOIStrike: number; maxPutOIStrike: number; maxCallOI: number; maxPutOI: number; totalCallOI: number; totalPutOI: number; pcr: number; maxPainStrike: number; }
-type TF = "1H" | "4H" | "1D";
+type TF = "5M" | "1H" | "4H" | "1D" | "1W";
 type Tab = "chart" | "oi" | "signals";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -360,28 +361,43 @@ function CandleChart({
         });
       }
 
-      // ── Manipulation Markers ──
-      if (manipEvents.length > 0) {
-        const isBull = (t: string) => ["bear_trap", "stop_hunt_low", "fakeout_down"].includes(t);
-        const markers = manipEvents
-          .filter(e => sorted.some(c => c.time === e.time))
-          .map(e => ({
-            time: e.time as any,
-            position: isBull(e.type) ? "belowBar" : "aboveBar",
-            color: isBull(e.type)
-              ? (e.severity === "high" ? "#16a34a" : "#34d399")
-              : (e.severity === "high" ? "#dc2626" : "#f87171"),
-            shape: isBull(e.type) ? "arrowUp" : "arrowDown",
-            text: e.severity === "high"
-              ? (isBull(e.type) ? "🐻 TRAP" : "🐂 TRAP")
-              : (isBull(e.type) ? "↑ Hunt" : "↓ Hunt"),
-            size: e.severity === "high" ? 2 : 1,
-          }));
+      // ── Markers: Dow Theory swings + Manipulation events ──
+      const isBull = (t: string) => ["bear_trap", "stop_hunt_low", "fakeout_down"].includes(t);
 
-        // LWC v5: createSeriesMarkers
-        if (markers.length > 0 && (LWC as any).createSeriesMarkers) {
-          (LWC as any).createSeriesMarkers(candleSeries, markers);
-        }
+      const manipMarkers = manipEvents
+        .filter(e => sorted.some(c => c.time === e.time))
+        .map(e => ({
+          time: e.time as any,
+          position: (isBull(e.type) ? "belowBar" : "aboveBar") as any,
+          color: isBull(e.type)
+            ? (e.severity === "high" ? "#16a34a" : "#34d399")
+            : (e.severity === "high" ? "#dc2626" : "#f87171"),
+          shape: (isBull(e.type) ? "arrowUp" : "arrowDown") as any,
+          text: e.severity === "high"
+            ? (isBull(e.type) ? "🐻 TRAP" : "🐂 TRAP")
+            : (isBull(e.type) ? "↑ Hunt" : "↓ Hunt"),
+          size: e.severity === "high" ? 2 : 1,
+        }));
+
+      // Dow Theory pivot markers — lookback/limit tuned per timeframe
+      const dtLookback = tf === "1W" ? 3 : 5;
+      const dtLimit    = tf === "5M" ? 6 : tf === "1D" ? 10 : tf === "1W" ? 8 : 8;
+      const dowRaw = findDowMarkers(sorted, dtLookback, dtLimit);
+      const dowMarkers = dowRaw.map(m => ({
+        time: m.time as any,
+        position: (m.isHigh ? "aboveBar" : "belowBar") as any,
+        color: m.isUp ? "#10b981" : "#ef4444",
+        shape: "circle" as any,
+        text: m.isUp ? (m.isHigh ? "HH" : "HL") : (m.isHigh ? "LH" : "LL"),
+        size: 1,
+      }));
+
+      // Dow Theory markers rendered first so manipulation arrows paint on top
+      const allMarkers = [...dowMarkers, ...manipMarkers]
+        .sort((a, b) => (a.time as number) - (b.time as number));
+
+      if (allMarkers.length > 0 && (LWC as any).createSeriesMarkers) {
+        (LWC as any).createSeriesMarkers(candleSeries, allMarkers);
       }
 
       chart.timeScale().fitContent();
@@ -400,14 +416,14 @@ function CandleChart({
 }
 
 // ─── Main Modal ───────────────────────────────────────────────────────────────
-export function ChartModal({ symbol, onClose }: { symbol: string; onClose: () => void }) {
+export function ChartModal({ symbol, onClose, defaultTf = "1H" }: { symbol: string; onClose: () => void; defaultTf?: TF }) {
   const [chartData, setChartData] = useState<ChartData | null>(null);
   const [opts, setOpts] = useState<OptionsData | null>(null);
   const [chartLoading, setChartLoading] = useState(true);
   const [optsLoading, setOptsLoading] = useState(true);
   const [chartError, setChartError] = useState("");
   const [optsError, setOptsError] = useState("");
-  const [tf, setTf] = useState<TF>("1H");
+  const [tf, setTf] = useState<TF>(defaultTf);
   const [tab, setTab] = useState<Tab>("chart");
   const [selectedExpiry, setSelectedExpiry] = useState("");
 
@@ -443,9 +459,21 @@ export function ChartModal({ symbol, onClose }: { symbol: string; onClose: () =>
 
   const candles = useMemo<RawCandle[]>(() => {
     if (!chartData) return [];
-    const arr = tf === "1H" ? chartData.candles1h : tf === "4H" ? chartData.candles4h : chartData.candles1d;
-    return arr ?? [];
+    if (tf === "5M") return chartData.candles5m ?? [];
+    if (tf === "1H") return chartData.candles1h ?? [];
+    if (tf === "4H") return chartData.candles4h ?? [];
+    if (tf === "1W") return chartData.candles1w ?? [];
+    return chartData.candles1d ?? [];
   }, [chartData, tf]);
+
+  const dowResult1d = useMemo(() => {
+    if (!chartData?.candles1d?.length) return null;
+    const s = [...chartData.candles1d].sort((a, b) => a.time - b.time);
+    return analyzeDowTheory(s.map(c => ({
+      date: new Date(c.time * 1000).toISOString().split("T")[0],
+      o: c.o, h: c.h, l: c.l, c: c.c, v: c.v,
+    })) as any);
+  }, [chartData]);
 
   const sorted = useMemo(() => [...candles].sort((a, b) => a.time - b.time), [candles]);
   const srLevels = useMemo(() => calcSRLevels(sorted as any), [sorted]);
@@ -518,9 +546,9 @@ export function ChartModal({ symbol, onClose }: { symbol: string; onClose: () =>
               {/* Toolbar row */}
               <div className="shrink-0 flex items-center gap-2 px-4 pt-3 pb-2 flex-wrap">
                 <div className="flex gap-1">
-                  {(["1H", "4H", "1D"] as TF[]).map(t => (
+                  {(["5M", "1H", "4H", "1D", "1W"] as TF[]).map(t => (
                     <button key={t} onClick={() => setTf(t)}
-                      className={`px-3 py-1.5 text-sm font-mono rounded-lg transition-all ${tf === t ? "bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-bold" : "text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"}`}
+                      className={`px-2.5 py-1.5 text-xs font-mono rounded-lg transition-all ${tf === t ? "bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-bold" : "text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"}`}
                     >{t}</button>
                   ))}
                 </div>
@@ -530,12 +558,28 @@ export function ChartModal({ symbol, onClose }: { symbol: string; onClose: () =>
                   <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 bg-red-500" />Resistance</span>
                   <span className="flex items-center gap-1"><span className="inline-block w-4 h-3 rounded-sm bg-green-500/20 border border-green-500" />Demand</span>
                   <span className="flex items-center gap-1"><span className="inline-block w-4 h-3 rounded-sm bg-red-500/20 border border-red-500" />Supply</span>
+                  <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />HH/HL</span>
+                  <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-red-500" />LH/LL</span>
                 </div>
               </div>
 
               {/* Level badges — scrollable strip */}
-              {srLevels.length > 0 && (
+              {(srLevels.length > 0 || dowResult1d) && (
                 <div className="shrink-0 mx-4 mb-2 flex gap-1.5 overflow-x-auto pb-1">
+                  {/* Dow Theory 1D summary badge */}
+                  {dowResult1d && dowResult1d.strength !== "none" && (
+                    <span className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full font-semibold border ${
+                      dowResult1d.strength === "strong"
+                        ? "bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-700"
+                        : dowResult1d.strength === "moderate"
+                          ? "bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-700"
+                          : "bg-teal-100 text-teal-800 border-teal-300 dark:bg-teal-900/30 dark:text-teal-400 dark:border-teal-700"
+                    }`}>
+                      Dow 1D:{" "}
+                      {dowResult1d.strength === "strong" ? "Strong ↑↑" : dowResult1d.strength === "moderate" ? "Uptrend ↑" : "Developing ↗"}
+                      {" "}({dowResult1d.hhCount}HH · {dowResult1d.hlCount}HL)
+                    </span>
+                  )}
                   {srLevels.slice(0, 6).map(sr => (
                     <span key={sr.label} className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full font-mono border ${sr.type === "resistance" ? "bg-red-50 text-red-700 border-red-200" : "bg-green-50 text-green-700 border-green-200"}`}>
                       {sr.label} ₹{sr.price} ({sr.strength}×)
@@ -594,9 +638,9 @@ export function ChartModal({ symbol, onClose }: { symbol: string; onClose: () =>
           {tab === "signals" && (
             <div className="flex-1 flex flex-col min-h-0 overflow-y-auto">
               <div className="shrink-0 flex gap-1 px-5 pt-4 pb-2">
-                {(["1H", "4H", "1D"] as TF[]).map(t => (
+                {(["5M", "1H", "4H", "1D", "1W"] as TF[]).map(t => (
                   <button key={t} onClick={() => setTf(t)}
-                    className={`px-3 py-1.5 text-sm font-mono rounded-lg transition-all ${tf === t ? "bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-bold" : "text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"}`}
+                    className={`px-2.5 py-1.5 text-xs font-mono rounded-lg transition-all ${tf === t ? "bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-bold" : "text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"}`}
                   >{t}</button>
                 ))}
                 <span className="hidden sm:inline ml-2 self-center text-xs text-gray-400">Manipulation signals · {tf}</span>

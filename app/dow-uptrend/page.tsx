@@ -384,7 +384,7 @@ export default function DowUptrendScreen() {
         </p>
       </div>
 
-      {chartSymbol && <ChartModal symbol={chartSymbol} onClose={() => setChartSymbol(null)} />}
+      {chartSymbol && <ChartModal symbol={chartSymbol} onClose={() => setChartSymbol(null)} defaultTf="1D" />}
     </div>
   );
 }

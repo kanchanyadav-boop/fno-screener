@@ -26,6 +26,10 @@ async function fetchYahoo(yahooSym: string, interval: string, range: string, noC
   return result;
 }
 
+async function tryFetchYahoo(yahooSym: string, interval: string, range: string, noCache = false) {
+  try { return await fetchYahoo(yahooSym, interval, range, noCache); } catch { return null; }
+}
+
 export async function GET(req: NextRequest) {
   const sym = req.nextUrl.searchParams.get("symbol") || "";
   const mode = req.nextUrl.searchParams.get("mode") || "screen"; // screen | chart
@@ -72,12 +76,15 @@ export async function GET(req: NextRequest) {
     }
 
     if (mode === "chart") {
-      const [r1h, r1d] = await Promise.all([
+      const [r5m, r1h, r1d, r1wk] = await Promise.all([
+        tryFetchYahoo(yahooSym, "5m", "5d", true),
         fetchYahoo(yahooSym, "60m", "30d", true),
         fetchYahoo(yahooSym, "1d", "1y", true),
+        tryFetchYahoo(yahooSym, "1wk", "2y"),
       ]);
 
       const parseCandles = (result: any, agg = 1) => {
+        if (!result) return [];
         const ts: number[] = result.timestamp || [];
         const q = result.indicators.quote[0];
         const raw = ts.map((t: number, i: number) => ({
@@ -112,9 +119,11 @@ export async function GET(req: NextRequest) {
         symbol: sym.toUpperCase(),
         price: r1d.meta.regularMarketPrice,
         prevClose: r1d.meta.chartPreviousClose,
-        candles1h: parseCandles(r1h, 1),
-        candles4h: parseCandles(r1h, 4),
-        candles1d: parseCandles(r1d, 1),
+        candles5m:  parseCandles(r5m, 1),
+        candles1h:  parseCandles(r1h, 1),
+        candles4h:  parseCandles(r1h, 4),
+        candles1d:  parseCandles(r1d, 1),
+        candles1w:  parseCandles(r1wk, 1),
       });
     }
 
