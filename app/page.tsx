@@ -259,8 +259,8 @@ export default function Home() {
       } catch { /* silent */ }
     };
 
-    const id = setInterval(tick, 3_000);
-    return () => clearInterval(id);
+    const id = window.setInterval(tick, 3_000);
+    return () => window.clearInterval(id);
   }, [results.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const ORDER: Record<string, number> = { breakdown: 0, watch: 1, uptrend: 2, neutral: 3 };

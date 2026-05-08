@@ -330,11 +330,10 @@ function CandleChart({
         const zoneSeries = chart.addSeries(LWC.BaselineSeries, {
           baseValue: { type: "price", price: zone.bottom },
           topLineColor: lineColor,
-          topLineWidth: 1,
+          lineWidth: 1,
           topFillColor1: fill,
           topFillColor2: fill,
           bottomLineColor: "rgba(0,0,0,0)",
-          bottomLineWidth: 1,
           bottomFillColor1: "rgba(0,0,0,0)",
           bottomFillColor2: "rgba(0,0,0,0)",
           crosshairMarkerVisible: false,
