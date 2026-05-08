@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
   const yahooSyms = symbols.map(toYahooSymbol).join(",");
 
   try {
-    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${yahooSyms}&fields=regularMarketPrice,chartPreviousClose,regularMarketChange,regularMarketChangePercent,regularMarketVolume,regularMarketTime`;
+    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${yahooSyms}&fields=regularMarketPrice,regularMarketPreviousClose,chartPreviousClose,regularMarketChange,regularMarketChangePercent,regularMarketVolume,regularMarketTime`;
     const res = await fetch(url, { headers: HEADERS, cache: "no-store" });
     if (!res.ok) throw new Error(`Yahoo ${res.status}`);
 
@@ -37,11 +37,13 @@ export async function GET(req: NextRequest) {
     const out: Record<string, { price: number; prevClose: number; change: number; changePct: number }> = {};
     for (const item of items) {
       const orig = yahooToOrig[item.symbol] ?? item.symbol.replace(".NS", "");
+      const prevCloseActual: number = item.regularMarketPreviousClose ?? item.chartPreviousClose ?? 0;
+      const price: number = item.regularMarketPrice ?? 0;
       out[orig] = {
-        price:     item.regularMarketPrice ?? 0,
-        prevClose: item.chartPreviousClose ?? item.regularMarketPreviousClose ?? 0,
+        price,
+        prevClose: prevCloseActual,
         change:    item.regularMarketChange ?? 0,
-        changePct: item.regularMarketChangePercent ?? 0,
+        changePct: prevCloseActual ? ((price - prevCloseActual) / prevCloseActual) * 100 : 0,
       };
     }
 

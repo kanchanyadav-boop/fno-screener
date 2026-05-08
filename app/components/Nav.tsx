@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 
 const LINKS = [
   { href: "/", label: "Breakdown Screen" },
-  { href: "/dow-uptrend", label: "Dow Theory Uptrend" },
+  { href: "/dow-uptrend", label: "Dow Theory Trends" },
 ];
 
 export function Nav() {

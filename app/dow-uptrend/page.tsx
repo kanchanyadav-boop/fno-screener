@@ -15,14 +15,22 @@ interface StockResult {
 }
 
 type SortKey = "score" | "hhCount" | "hlCount" | "chg";
+type TrendFilter = "up" | "down";
 type FlashDir = "up" | "down";
 interface Flash { dir: FlashDir; n: number }
 
-const STRENGTH = {
+const UP_STRENGTH = {
   strong:   { bg: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300", border: "border-l-emerald-500", label: "Strong Uptrend ↑↑" },
   moderate: { bg: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300",             border: "border-l-blue-500",    label: "Uptrend ↑" },
   weak:     { bg: "bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300",             border: "border-l-teal-500",    label: "Developing ↗" },
   none:     { bg: "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400",                border: "border-l-gray-300",    label: "No Trend" },
+};
+
+const DOWN_STRENGTH = {
+  strong:   { bg: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300",       border: "border-l-red-600",    label: "Strong Downtrend ↓↓" },
+  moderate: { bg: "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300", border: "border-l-orange-500", label: "Downtrend ↓" },
+  weak:     { bg: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",    border: "border-l-amber-500",  label: "Weakening ↘" },
+  none:     { bg: "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400",            border: "border-l-gray-300",   label: "No Trend" },
 };
 
 function SwingSequence({ points, label }: { points: SwingPoint[]; label: string }) {
@@ -67,14 +75,22 @@ function DowCard({
   r,
   onChartClick,
   flash,
+  trendFilter,
 }: {
   r: StockResult;
   onChartClick: () => void;
   flash?: Flash;
+  trendFilter: TrendFilter;
 }) {
   const { dow } = r;
-  const b = STRENGTH[dow.strength];
+  const isDown = trendFilter === "down";
+  const b = isDown ? DOWN_STRENGTH[dow.downStrength] : UP_STRENGTH[dow.strength];
+  const score = isDown ? dow.downScore : dow.score;
   const chg = r.changePct ?? 0;
+
+  const dotRows: [string, number, string][] = isDown
+    ? [["LH", dow.lhCount, "bg-red-500"], ["LL", dow.llCount, "bg-red-500"]]
+    : [["HH", dow.hhCount, "bg-emerald-500"], ["HL", dow.hlCount, "bg-emerald-500"]];
 
   return (
     <div
@@ -117,15 +133,10 @@ function DowCard({
         <SwingSequence points={dow.swingLows} label="L" />
       </div>
 
-      {/* Row 3: HH/HL dots + score */}
+      {/* Row 3: LH/LL or HH/HL dots + score */}
       <div className="flex items-center justify-between pt-3 border-t border-gray-100 dark:border-gray-800">
         <div className="flex items-center gap-4">
-          {(
-            [
-              ["HH", dow.hhCount, "bg-emerald-500"],
-              ["HL", dow.hlCount, "bg-emerald-500"],
-            ] as [string, number, string][]
-          ).map(([label, count, activeColor]) => (
+          {dotRows.map(([label, count, activeColor]) => (
             <div key={label} className="flex items-center gap-1">
               <span className="text-[10px] text-gray-400 font-medium w-5">{label}</span>
               {Array.from({ length: 4 }).map((_, i) => (
@@ -138,11 +149,15 @@ function DowCard({
           ))}
         </div>
         <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded-full ${
-          dow.score >= 7
-            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400"
-            : "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
+          isDown
+            ? score >= 7
+              ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
+              : "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400"
+            : score >= 7
+              ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400"
+              : "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
         }`}>
-          {dow.score}/10
+          {score}/10
         </span>
       </div>
     </div>
@@ -157,6 +172,7 @@ export default function DowUptrendScreen() {
   const [chartSymbol, setChartSymbol] = useState<string | null>(null);
   const [flashes, setFlashes] = useState<Record<string, Flash>>({});
   const [sort, setSort] = useState<SortKey>("score");
+  const [trendFilter, setTrendFilter] = useState<TrendFilter>("up");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   const cancelRef = useRef(false);
@@ -191,7 +207,7 @@ export default function DowUptrendScreen() {
           const data = await res.json();
           if (!data.error && Array.isArray(data.candles) && data.candles.length >= 13) {
             const dow = analyzeDowTheory(data.candles as Candle[]);
-            if (dow.isUptrend) {
+            if (dow.isUptrend || dow.isDowntrend) {
               const result: StockResult = {
                 symbol: sym,
                 price: data.price,
@@ -249,10 +265,20 @@ export default function DowUptrendScreen() {
     return () => window.clearInterval(id);
   }, [flashSym]);
 
-  const sorted = [...results].sort((a, b) => {
-    if (sort === "score") return b.dow.score - a.dow.score;
-    if (sort === "hhCount") return b.dow.hhCount - a.dow.hhCount;
-    if (sort === "hlCount") return b.dow.hlCount - a.dow.hlCount;
+  const filtered = results.filter(r =>
+    trendFilter === "up" ? r.dow.isUptrend : r.dow.isDowntrend
+  );
+
+  const sorted = [...filtered].sort((a, b) => {
+    if (sort === "score") return trendFilter === "down"
+      ? b.dow.downScore - a.dow.downScore
+      : b.dow.score - a.dow.score;
+    if (sort === "hhCount") return trendFilter === "down"
+      ? b.dow.lhCount - a.dow.lhCount
+      : b.dow.hhCount - a.dow.hhCount;
+    if (sort === "hlCount") return trendFilter === "down"
+      ? b.dow.llCount - a.dow.llCount
+      : b.dow.hlCount - a.dow.hlCount;
     return (b.changePct ?? 0) - (a.changePct ?? 0);
   });
 
@@ -265,10 +291,10 @@ export default function DowUptrendScreen() {
         {/* Header */}
         <div className="mb-6">
           <h1 className="text-xl font-bold tracking-tight text-gray-900 dark:text-white">
-            Dow Theory · Uptrend Scanner
+            Dow Theory · Trend Scanner
           </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Scans all {FNO_STOCKS.length} NSE F&amp;O stocks for consecutive Higher Highs + Higher Lows
+            Scans all {FNO_STOCKS.length} NSE F&amp;O stocks for confirmed Dow Theory uptrends and downtrends
           </p>
         </div>
 
@@ -313,20 +339,44 @@ export default function DowUptrendScreen() {
               <span className="text-gray-400">
                 {scanning ? `Scanning ${progress.done} / ${progress.total}…` : `Scanned ${progress.done} / ${progress.total}`}
               </span>
-              <span className="text-emerald-600 font-semibold">{progress.found} in uptrend</span>
+              <span className="text-emerald-600 font-semibold">{progress.found} trending</span>
             </div>
           </div>
         )}
 
-        {/* Sort + live indicator */}
+        {/* Trend toggle + sort + live indicator */}
+        {results.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap mb-3">
+            {(["up", "down"] as TrendFilter[]).map((f) => {
+              const upCount = results.filter(r => r.dow.isUptrend).length;
+              const downCount = results.filter(r => r.dow.isDowntrend).length;
+              return (
+                <button
+                  key={f}
+                  onClick={() => setTrendFilter(f)}
+                  className={`text-sm font-semibold px-4 py-1.5 rounded-full border transition-colors ${
+                    trendFilter === f
+                      ? f === "up"
+                        ? "bg-emerald-600 border-emerald-600 text-white"
+                        : "bg-red-600 border-red-600 text-white"
+                      : "border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+                  }`}
+                >
+                  {f === "up" ? `↑ Uptrend (${upCount})` : `↓ Downtrend (${downCount})`}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {results.length > 0 && (
           <div className="flex items-center gap-2 flex-wrap mb-4">
             <span className="text-xs text-gray-400">Sort:</span>
             {(
               [
                 ["score", "Score"],
-                ["hhCount", "HH Count"],
-                ["hlCount", "HL Count"],
+                ["hhCount", trendFilter === "down" ? "LH Count" : "HH Count"],
+                ["hlCount", trendFilter === "down" ? "LL Count" : "HL Count"],
                 ["chg", "% Change"],
               ] as [SortKey, string][]
             ).map(([key, label]) => (
@@ -362,6 +412,7 @@ export default function DowUptrendScreen() {
               r={r}
               flash={flashes[r.symbol]}
               onChartClick={() => setChartSymbol(r.symbol)}
+              trendFilter={trendFilter}
             />
           ))}
         </div>
@@ -369,13 +420,19 @@ export default function DowUptrendScreen() {
         {/* Empty states */}
         {!scanning && results.length === 0 && progress.done === 0 && (
           <div className="text-center py-20 text-sm text-gray-400">
-            Click <strong className="text-gray-500">Scan All F&amp;O ↗</strong> to find NSE F&amp;O stocks in Dow Theory uptrend
+            Click <strong className="text-gray-500">Scan All F&amp;O ↗</strong> to find NSE F&amp;O stocks in Dow Theory trend
           </div>
         )}
 
         {!scanning && results.length === 0 && progress.done > 0 && (
           <div className="text-center py-10 text-sm text-gray-400">
-            No confirmed Dow Theory uptrends found. Try switching to Weekly timeframe.
+            No confirmed Dow Theory trends found. Try switching to Weekly timeframe.
+          </div>
+        )}
+
+        {!scanning && results.length > 0 && sorted.length === 0 && (
+          <div className="text-center py-10 text-sm text-gray-400">
+            No {trendFilter === "up" ? "uptrend" : "downtrend"} stocks found. Switch the toggle above.
           </div>
         )}
 

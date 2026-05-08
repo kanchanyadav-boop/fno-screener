@@ -64,12 +64,17 @@ export async function GET(req: NextRequest) {
         v: quote.volume?.[i] ?? 0,
       })).filter((c) => c.h != null && c.l != null && c.c != null);
 
+      const prevCloseActual: number = meta.regularMarketPreviousClose ?? meta.chartPreviousClose ?? 0;
+      const changePct = prevCloseActual
+        ? ((meta.regularMarketPrice - prevCloseActual) / prevCloseActual) * 100
+        : 0;
+
       return NextResponse.json({
         symbol: sym.toUpperCase(),
         yahooSymbol: yahooSym,
         price: meta.regularMarketPrice,
-        prevClose: meta.chartPreviousClose,
-        changePct: meta.regularMarketChangePercent ?? 0,
+        prevClose: prevCloseActual,
+        changePct,
         currency: meta.currency,
         exchangeName: meta.exchangeName,
         candles,

@@ -553,10 +553,12 @@ export function ChartModal({ symbol, onClose, defaultTf = "1H", hideSignals = fa
                 </div>
                 <div className="hidden sm:flex flex-wrap gap-3 ml-2 text-[10px] text-gray-500">
                   <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 bg-amber-400" />EMA 20</span>
-                  <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 bg-green-500" />Support</span>
-                  <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 bg-red-500" />Resistance</span>
-                  <span className="flex items-center gap-1"><span className="inline-block w-4 h-3 rounded-sm bg-green-500/20 border border-green-500" />Demand</span>
-                  <span className="flex items-center gap-1"><span className="inline-block w-4 h-3 rounded-sm bg-red-500/20 border border-red-500" />Supply</span>
+                  {!hideSignals && <>
+                    <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 bg-green-500" />Support</span>
+                    <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 bg-red-500" />Resistance</span>
+                    <span className="flex items-center gap-1"><span className="inline-block w-4 h-3 rounded-sm bg-green-500/20 border border-green-500" />Demand</span>
+                    <span className="flex items-center gap-1"><span className="inline-block w-4 h-3 rounded-sm bg-red-500/20 border border-red-500" />Supply</span>
+                  </>}
                   <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />HH/HL</span>
                   <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-red-500" />LH/LL</span>
                 </div>
@@ -579,7 +581,7 @@ export function ChartModal({ symbol, onClose, defaultTf = "1H", hideSignals = fa
                       {" "}({dowResult1d.hhCount}HH · {dowResult1d.hlCount}HL)
                     </span>
                   )}
-                  {srLevels.slice(0, 6).map(sr => (
+                  {!hideSignals && srLevels.slice(0, 6).map(sr => (
                     <span key={sr.label} className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full font-mono border ${sr.type === "resistance" ? "bg-red-50 text-red-700 border-red-200" : "bg-green-50 text-green-700 border-green-200"}`}>
                       {sr.label} ₹{sr.price} ({sr.strength}×)
                     </span>
@@ -589,7 +591,7 @@ export function ChartModal({ symbol, onClose, defaultTf = "1H", hideSignals = fa
                     <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full font-mono border bg-green-100 text-green-800 border-green-300">Put OI ₹{opts.maxPutOIStrike}</span>
                     <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full font-mono border bg-orange-100 text-orange-800 border-orange-300">Pain ₹{opts.maxPainStrike}</span>
                   </>}
-                  {sdZones.map((z, i) => (
+                  {!hideSignals && sdZones.map((z, i) => (
                     <span key={`sdz-${i}`} className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full font-mono border ${
                       z.type === "demand"
                         ? "bg-green-50 text-green-800 border-green-400 dark:bg-green-950/30 dark:text-green-400"
@@ -610,7 +612,7 @@ export function ChartModal({ symbol, onClose, defaultTf = "1H", hideSignals = fa
                 )}
                 {chartError && <div className="flex h-full items-center justify-center text-sm text-red-500">{chartError}</div>}
                 {!chartLoading && !chartError && (
-                  <CandleChart key={tf} candles={candles} tf={tf} opts={opts} srLevels={srLevels} manipEvents={hideSignals ? [] : manipEvents} sdZones={sdZones} />
+                  <CandleChart key={tf} candles={candles} tf={tf} opts={opts} srLevels={hideSignals ? [] : srLevels} manipEvents={hideSignals ? [] : manipEvents} sdZones={hideSignals ? [] : sdZones} />
                 )}
               </div>
 
