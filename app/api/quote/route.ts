@@ -69,6 +69,7 @@ export async function GET(req: NextRequest) {
         yahooSymbol: yahooSym,
         price: meta.regularMarketPrice,
         prevClose: meta.chartPreviousClose,
+        changePct: meta.regularMarketChangePercent ?? 0,
         currency: meta.currency,
         exchangeName: meta.exchangeName,
         candles,

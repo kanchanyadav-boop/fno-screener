@@ -10,6 +10,7 @@ interface StockResult {
   symbol: string;
   price: number;
   prevClose: number;
+  changePct: number;
   dow: DowTheoryResult;
 }
 
@@ -73,7 +74,7 @@ function DowCard({
 }) {
   const { dow } = r;
   const b = STRENGTH[dow.strength];
-  const chg = r.prevClose ? ((r.price - r.prevClose) / r.prevClose) * 100 : 0;
+  const chg = r.changePct ?? 0;
 
   return (
     <div
@@ -195,6 +196,7 @@ export default function DowUptrendScreen() {
                 symbol: sym,
                 price: data.price,
                 prevClose: data.prevClose,
+                changePct: data.changePct ?? 0,
                 dow,
               };
               prevPricesRef.current[sym] = data.price;
@@ -226,7 +228,7 @@ export default function DowUptrendScreen() {
       if (!syms.length) return;
       try {
         const res = await fetch(`/api/prices?symbols=${syms.map(encodeURIComponent).join(",")}`);
-        const data: Record<string, { price: number; prevClose: number }> = await res.json();
+        const data: Record<string, { price: number; prevClose: number; changePct: number }> = await res.json();
         if ((data as any).error) return;
         setResults((prev) =>
           prev.map((x) => {
@@ -236,7 +238,7 @@ export default function DowUptrendScreen() {
             if (old !== undefined && d.price !== old)
               flashSym(x.symbol, d.price > old ? "up" : "down");
             prevPricesRef.current[x.symbol] = d.price;
-            return { ...x, price: d.price, prevClose: d.prevClose };
+            return { ...x, price: d.price, prevClose: d.prevClose, changePct: d.changePct ?? x.changePct };
           })
         );
         setLastUpdated(new Date());
@@ -251,9 +253,7 @@ export default function DowUptrendScreen() {
     if (sort === "score") return b.dow.score - a.dow.score;
     if (sort === "hhCount") return b.dow.hhCount - a.dow.hhCount;
     if (sort === "hlCount") return b.dow.hlCount - a.dow.hlCount;
-    const achg = a.prevClose ? (a.price - a.prevClose) / a.prevClose : 0;
-    const bchg = b.prevClose ? (b.price - b.prevClose) / b.prevClose : 0;
-    return bchg - achg;
+    return (b.changePct ?? 0) - (a.changePct ?? 0);
   });
 
   const pct = progress.total ? Math.round((progress.done / progress.total) * 100) : 0;

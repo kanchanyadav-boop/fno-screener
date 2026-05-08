@@ -15,6 +15,7 @@ interface StockResult {
   symbol: string;
   price: number;
   prevClose: number;
+  changePct: number;
   pattern: PatternResult;
   segments: Segment[];
   error?: string;
@@ -79,7 +80,7 @@ function ResultCard({ r, onChartClick, flash }: { r: StockResult; onChartClick: 
 
   const { pattern, segments, hh, hl, hv, breakdown, strongBreakdown, breakdownVolSpike, score } = r.pattern;
   const b = BADGE[pattern];
-  const chg = ((r.price - r.prevClose) / r.prevClose) * 100;
+  const chg = r.changePct;
 
   return (
     <div
@@ -201,16 +202,16 @@ export default function Home() {
         const res = await fetch(`/api/quote?symbol=${sym}&interval=${interval}`);
         if (!res.ok) {
           const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-          setResults((prev) => [...prev, { symbol: sym, price: 0, prevClose: 0, pattern: {} as PatternResult, segments: [], error: err.error || `HTTP ${res.status}` }]);
+          setResults((prev) => [...prev, { symbol: sym, price: 0, prevClose: 0, changePct: 0, pattern: {} as PatternResult, segments: [], error: err.error || `HTTP ${res.status}` }]);
           continue;
         }
         const data = await res.json();
         if (data.error) {
-          setResults((prev) => [...prev, { symbol: sym, price: 0, prevClose: 0, pattern: {} as PatternResult, segments: [], error: data.error }]);
+          setResults((prev) => [...prev, { symbol: sym, price: 0, prevClose: 0, changePct: 0, pattern: {} as PatternResult, segments: [], error: data.error }]);
           continue;
         }
         const pattern = detectPattern(data.candles);
-        setResults((prev) => [...prev, { symbol: sym, price: data.price, prevClose: data.prevClose, pattern, segments: pattern.segments }]);
+        setResults((prev) => [...prev, { symbol: sym, price: data.price, prevClose: data.prevClose, changePct: data.changePct ?? 0, pattern, segments: pattern.segments }]);
       } catch (e: any) {
         setResults((prev) => [...prev, { symbol: sym, price: 0, prevClose: 0, pattern: {} as PatternResult, segments: [], error: String(e) }]);
       }
@@ -245,7 +246,7 @@ export default function Home() {
       if (!syms.length) return;
       try {
         const r = await fetch(`/api/prices?symbols=${syms.join(",")}`);
-        const data: Record<string, { price: number; prevClose: number }> = await r.json();
+        const data: Record<string, { price: number; prevClose: number; changePct: number }> = await r.json();
         if ((data as any).error) return;
         setResults(prev => prev.map(x => {
           const d = data[x.symbol];
@@ -253,7 +254,7 @@ export default function Home() {
           const old = prevPricesRef.current[x.symbol];
           if (old !== undefined && d.price !== old) flashSym(x.symbol, d.price > old ? "up" : "down");
           prevPricesRef.current[x.symbol] = d.price;
-          return { ...x, price: d.price, prevClose: d.prevClose };
+          return { ...x, price: d.price, prevClose: d.prevClose, changePct: d.changePct ?? x.changePct };
         }));
         setLastUpdated(new Date());
       } catch { /* silent */ }
