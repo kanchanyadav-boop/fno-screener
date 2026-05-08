@@ -415,7 +415,7 @@ function CandleChart({
 }
 
 // ─── Main Modal ───────────────────────────────────────────────────────────────
-export function ChartModal({ symbol, onClose, defaultTf = "1H" }: { symbol: string; onClose: () => void; defaultTf?: TF }) {
+export function ChartModal({ symbol, onClose, defaultTf = "1H", hideSignals = false }: { symbol: string; onClose: () => void; defaultTf?: TF; hideSignals?: boolean }) {
   const [chartData, setChartData] = useState<ChartData | null>(null);
   const [opts, setOpts] = useState<OptionsData | null>(null);
   const [chartLoading, setChartLoading] = useState(true);
@@ -505,7 +505,7 @@ export function ChartModal({ symbol, onClose, defaultTf = "1H" }: { symbol: stri
               <span className="hidden sm:inline text-[10px] px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200 font-mono">S ₹{opts.maxPutOIStrike}</span>
               <span className="hidden sm:inline text-[10px] px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 border border-orange-200 font-mono">Pain ₹{opts.maxPainStrike}</span>
             </>}
-            {highSeverityCount > 0 && (
+            {!hideSignals && highSeverityCount > 0 && (
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 border border-purple-200 font-semibold animate-pulse">
                 ⚡ {highSeverityCount} Manipulation Signal{highSeverityCount > 1 ? "s" : ""}
               </span>
@@ -518,7 +518,7 @@ export function ChartModal({ symbol, onClose, defaultTf = "1H" }: { symbol: stri
         <div className="flex items-center px-5 pt-0 border-b border-gray-100 dark:border-gray-800 shrink-0">
           {([
             ["chart", "📈 Chart"],
-            ["signals", `⚡ Signals${signals1H.length > 0 ? ` (${signals1H.length})` : ""}`],
+            ...(!hideSignals ? [["signals", `⚡ Signals${signals1H.length > 0 ? ` (${signals1H.length})` : ""}`] as [Tab, string]] : []),
             ["oi", "🔢 OI"],
           ] as [Tab, string][]).map(([t, label]) => (
             <button key={t} onClick={() => setTab(t)}
@@ -610,7 +610,7 @@ export function ChartModal({ symbol, onClose, defaultTf = "1H" }: { symbol: stri
                 )}
                 {chartError && <div className="flex h-full items-center justify-center text-sm text-red-500">{chartError}</div>}
                 {!chartLoading && !chartError && (
-                  <CandleChart key={tf} candles={candles} tf={tf} opts={opts} srLevels={srLevels} manipEvents={manipEvents} sdZones={sdZones} />
+                  <CandleChart key={tf} candles={candles} tf={tf} opts={opts} srLevels={srLevels} manipEvents={hideSignals ? [] : manipEvents} sdZones={sdZones} />
                 )}
               </div>
 
