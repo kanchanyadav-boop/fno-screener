@@ -24,7 +24,12 @@ const SIGNAL_META: Record<TipSignal, { label: string; short: string; border: str
   BUY:   { label: "Buy Zone ▲",    short: "BUY",  border: "border-l-emerald-500", badge: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300" },
   NEAR:  { label: "Approaching ↓", short: "NEAR", border: "border-l-amber-500",   badge: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300" },
   WATCH: { label: "Watch 👁",       short: "WATCH",border: "border-l-blue-400",    badge: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" },
-  NONE:  { label: "No Setup",       short: "–",    border: "border-l-gray-300",    badge: "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400" },
+};
+
+const SHORT_SIGNAL_META: Record<TipSignal, { label: string; short: string; border: string; badge: string }> = {
+  BUY:   { label: "Sell Zone ▼",   short: "SELL", border: "border-l-red-500",   badge: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300" },
+  NEAR:  { label: "Approaching ↑", short: "NEAR", border: "border-l-amber-500", badge: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300" },
+  WATCH: { label: "Watch 👁",       short: "WATCH",border: "border-l-blue-400",  badge: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" },
 };
 
 const CONF_BADGE: Record<string, string> = {
@@ -40,7 +45,14 @@ const STRENGTH_LABEL: Record<string, string> = {
   none:     "No Trend",
 };
 
-const SIGNAL_ORDER: Record<TipSignal, number> = { BUY: 0, NEAR: 1, WATCH: 2, NONE: 3 };
+const DOWN_STRENGTH_LABEL: Record<string, string> = {
+  strong:   "Strong ↓↓",
+  moderate: "Downtrend ↓",
+  weak:     "Developing ↘",
+  none:     "No Trend",
+};
+
+const SIGNAL_ORDER: Record<TipSignal, number> = { BUY: 0, NEAR: 1, WATCH: 2 };
 
 function fmt(n: number): string {
   if (n >= 1000) return (n / 1000).toFixed(1) + "k";
@@ -52,41 +64,50 @@ function fmtPrice(n: number): string {
 }
 
 // ─── Zone Bar ────────────────────────────────────────────────────────────────
-// Horizontal proportional bar: stop ▓▓▓▓[zone]▓▓▓•price▓▓▓▓▓target
 function ZoneBar({ tip, currentPrice }: { tip: TradeTip; currentPrice: number }) {
-  const lo   = tip.stopLoss;
-  const hi   = tip.target;
+  const isShort = tip.direction === "short";
+
+  // For longs:  bar spans [stopLoss → target], price approaches zone from above
+  // For shorts: bar spans [target → stopLoss], price approaches zone from below
+  const lo   = isShort ? tip.target   : tip.stopLoss;
+  const hi   = isShort ? tip.stopLoss : tip.target;
   const span = hi - lo;
   if (span <= 0) return null;
 
   const pct = (v: number) => Math.max(0, Math.min(100, ((v - lo) / span) * 100));
 
-  const zBotPct     = pct(tip.demandZone.bottom);
-  const zTopPct     = pct(tip.demandZone.top);
-  const pricePct    = pct(currentPrice);
+  const zBotPct      = pct(tip.zone.bottom);
+  const zTopPct      = pct(tip.zone.top);
+  const pricePct     = pct(currentPrice);
   const zoneWidthPct = zTopPct - zBotPct;
+
+  const zoneFill       = isShort ? "bg-red-200 dark:bg-red-900/50"     : "bg-emerald-200 dark:bg-emerald-900/50";
+  const zoneEntryColor = isShort ? "bg-red-500"                         : "bg-emerald-500";
+  // entry line: zone bottom for short (prevLL), zone top for long (prevHH)
+  const entryLinePct   = isShort ? zBotPct : zTopPct;
+  const targetColor    = isShort ? "bg-red-600"                         : "bg-emerald-600";
 
   return (
     <div className="relative h-4 bg-gray-100 dark:bg-gray-800 rounded-full overflow-visible my-2">
       {/* Zone fill */}
       <div
-        className="absolute top-0 h-full rounded-full bg-emerald-200 dark:bg-emerald-900/50"
+        className={`absolute top-0 h-full rounded-full ${zoneFill}`}
         style={{ left: `${zBotPct}%`, width: `${zoneWidthPct}%` }}
       />
-      {/* Zone top line */}
+      {/* Entry line (zone top for long, zone bottom for short) */}
       <div
-        className="absolute top-0 h-full w-px bg-emerald-500"
-        style={{ left: `${zTopPct}%` }}
+        className={`absolute top-0 h-full w-px ${zoneEntryColor}`}
+        style={{ left: `${entryLinePct}%` }}
       />
       {/* Stop marker */}
       <div
-        className="absolute top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-red-500"
-        style={{ left: `${pct(tip.stopLoss)}%`, transform: "translate(-50%, -50%)" }}
+        className="absolute top-1/2 w-1.5 h-1.5 rounded-full bg-red-500"
+        style={{ left: isShort ? "99%" : "1%", transform: "translate(-50%, -50%)" }}
       />
       {/* Target marker */}
       <div
-        className="absolute top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-emerald-600"
-        style={{ left: "99%", transform: "translate(-50%, -50%)" }}
+        className={`absolute top-1/2 w-1.5 h-1.5 rounded-full ${targetColor}`}
+        style={{ left: isShort ? "1%" : "99%", transform: "translate(-50%, -50%)" }}
       />
       {/* Current price marker */}
       <div
@@ -97,7 +118,7 @@ function ZoneBar({ tip, currentPrice }: { tip: TradeTip; currentPrice: number })
   );
 }
 
-// ─── Swing Sequence (reused from dow-uptrend) ────────────────────────────────
+// ─── Swing Sequence ──────────────────────────────────────────────────────────
 function SwingSequence({ points, label }: { points: SwingPoint[]; label: string }) {
   const last4 = points.slice(-4);
   if (!last4.length) return null;
@@ -143,14 +164,30 @@ function TipCard({
   flash?: Flash;
 }) {
   const { tip } = r;
-  const meta  = SIGNAL_META[tip.signal];
-  const chg   = r.changePct ?? 0;
+  const isShort = tip.direction === "short";
+  const meta    = isShort ? SHORT_SIGNAL_META[tip.signal] : SIGNAL_META[tip.signal];
+  const chg     = r.changePct ?? 0;
+
+  const strengthKey = isShort ? tip.dow.downStrength : tip.dow.strength;
+  const strengthLabel = isShort
+    ? DOWN_STRENGTH_LABEL[strengthKey]
+    : STRENGTH_LABEL[strengthKey];
 
   const distLabel =
-    tip.bouncingFromZone ? "Bouncing from zone" :
-    tip.touchedZone      ? "Touched zone" :
-    tip.distToZonePct < 0 ? `${Math.abs(tip.distToZonePct).toFixed(1)}% inside zone` :
-    `${tip.distToZonePct.toFixed(1)}% above zone`;
+    tip.bouncingFromZone
+      ? isShort ? "Rejecting from zone" : "Bouncing from zone"
+      : tip.touchedZone
+        ? "Touched zone"
+        : tip.distToZonePct < 0
+          ? `${Math.abs(tip.distToZonePct).toFixed(1)}% inside zone`
+          : isShort
+            ? `${tip.distToZonePct.toFixed(1)}% below zone`
+            : `${tip.distToZonePct.toFixed(1)}% above zone`;
+
+  const entryLabel = isShort ? "Short" : "Entry";
+  const dirBadge = isShort
+    ? "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400 text-[9px] font-bold px-1.5 py-0.5 rounded"
+    : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 text-[9px] font-bold px-1.5 py-0.5 rounded";
 
   return (
     <div
@@ -170,6 +207,7 @@ function TipCard({
           <span className="font-mono font-bold text-[15px] tracking-wide text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
             {r.symbol}
           </span>
+          <span className={dirBadge}>{isShort ? "SHORT" : "LONG"}</span>
           <span className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full ${meta.badge}`}>
             {meta.label}
           </span>
@@ -193,7 +231,7 @@ function TipCard({
       {/* Row 2: Trend strength + R:R */}
       <div className="flex items-center justify-between mb-1">
         <span className="text-[11px] text-gray-500 dark:text-gray-400">
-          {STRENGTH_LABEL[tip.dow.strength]}
+          {strengthLabel}
         </span>
         <span className={`text-[11px] font-mono font-bold ${
           tip.riskReward >= 2
@@ -212,9 +250,9 @@ function TipCard({
       {/* Row 3: Trade levels */}
       <div className="grid grid-cols-3 gap-2 mb-3">
         {([
-          ["Entry",  tip.entry,    "text-blue-600 dark:text-blue-400"],
-          ["Target", tip.target,   "text-emerald-600 dark:text-emerald-400"],
-          ["Stop",   tip.stopLoss, "text-red-500 dark:text-red-400"],
+          [entryLabel, tip.entry,    "text-blue-600 dark:text-blue-400"],
+          ["Target",   tip.target,   isShort ? "text-red-500 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400"],
+          ["Stop",     tip.stopLoss, "text-red-500 dark:text-red-400"],
         ] as [string, number, string][]).map(([label, price, cls]) => (
           <div key={label} className="text-center">
             <div className="text-[9px] text-gray-400 uppercase tracking-wide">{label}</div>
@@ -229,11 +267,11 @@ function TipCard({
         <SwingSequence points={tip.dow.swingLows}  label="L" />
       </div>
 
-      {/* Row 5: Zone distance + demand anchor */}
+      {/* Row 5: Zone distance + zone range */}
       <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-gray-800">
         <span className="text-[10px] text-gray-400">{distLabel}</span>
         <span className="text-[10px] text-gray-400 font-mono">
-          Zone ₹{fmt(tip.demandZone.bottom)}–{fmt(tip.demandZone.top)}
+          {isShort ? "Supply" : "Demand"} Zone ₹{fmt(tip.zone.bottom)}–{fmt(tip.zone.top)}
         </span>
       </div>
     </div>
@@ -283,7 +321,7 @@ export default function TradeTipsScreen() {
           const data = await res.json();
           if (!data.error && Array.isArray(data.candles) && data.candles.length >= 15) {
             const tip = generateTradeTip(data.candles as Candle[]);
-            if (tip && tip.signal !== "NONE") {
+            if (tip) {
               const result: StockResult = {
                 symbol: sym,
                 price: data.price,
@@ -367,10 +405,10 @@ export default function TradeTipsScreen() {
         {/* Header */}
         <div className="mb-6">
           <h1 className="text-xl font-bold tracking-tight text-gray-900 dark:text-white">
-            Trade Tips · Demand Zone Pullback
+            Trade Tips · Demand &amp; Supply Zones
           </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Uptrending stocks (Dow Theory HH+HL) pulling back to the prior swing high demand zone
+            Uptrend stocks pulling back to demand zone (long) · Downtrend stocks bouncing to supply zone (short)
           </p>
         </div>
 
@@ -488,13 +526,13 @@ export default function TradeTipsScreen() {
         {/* Empty states */}
         {!scanning && results.length === 0 && progress.done === 0 && (
           <div className="text-center py-20 text-sm text-gray-400">
-            Click <strong className="text-gray-500">Scan All F&amp;O ↗</strong> to find demand-zone pullback setups
+            Click <strong className="text-gray-500">Scan All F&amp;O ↗</strong> to find demand/supply zone setups
           </div>
         )}
 
         {!scanning && results.length === 0 && progress.done > 0 && (
           <div className="text-center py-10 text-sm text-gray-400">
-            No demand-zone pullback setups found right now. Try again when the market has pulled back.
+            No zone setups found right now. Try again when the market has pulled back or bounced.
           </div>
         )}
 
@@ -507,12 +545,12 @@ export default function TradeTipsScreen() {
         {/* Legend */}
         {results.length > 0 && (
           <div className="mt-8 p-4 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-xs text-gray-500 dark:text-gray-400 space-y-1">
-            <div className="font-semibold text-gray-700 dark:text-gray-300 mb-2">How the zone is built</div>
-            <div>• Uptrend confirmed by Dow Theory (HH+HL sequence on daily)</div>
-            <div>• <span className="font-medium text-blue-600 dark:text-blue-400">Demand zone top</span> = second-to-last swing high (prior resistance, now support)</div>
-            <div>• <span className="font-medium text-blue-600 dark:text-blue-400">Demand zone bottom</span> = the Higher Low that formed between the two most recent HHs</div>
-            <div>• <span className="font-medium text-emerald-600 dark:text-emerald-400">BUY</span> = price is at / inside the zone; <span className="font-medium text-amber-600 dark:text-amber-400">NEAR</span> = within 5%; <span className="font-medium text-blue-500">WATCH</span> = 5–10% above zone</div>
-            <div>• Stop placed 1% below zone bottom; target = last confirmed swing high</div>
+            <div className="font-semibold text-gray-700 dark:text-gray-300 mb-2">How zones are built</div>
+            <div>• <span className="font-medium text-emerald-600 dark:text-emerald-400">Long (demand)</span>: Dow Theory HH+HL uptrend pulling back to prior swing high level</div>
+            <div>• <span className="font-medium text-red-500 dark:text-red-400">Short (supply)</span>: Dow Theory LH+LL downtrend bouncing back to prior swing low level</div>
+            <div>• Zone width = wave trough/peak between the two confirming swing pivots</div>
+            <div>• <span className="font-medium text-emerald-600 dark:text-emerald-400">BUY / SELL</span> = price at zone · <span className="font-medium text-amber-600 dark:text-amber-400">NEAR</span> = within 6% · <span className="font-medium text-blue-500">WATCH</span> = within 20%</div>
+            <div>• Stop placed 1% beyond zone edge; target = last confirmed swing pivot · min R:R 1:3</div>
           </div>
         )}
 
