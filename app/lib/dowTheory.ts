@@ -71,10 +71,10 @@ export interface DowTheoryResult {
   isDowntrend: boolean;
   swingHighs: SwingPoint[];  // last 5 confirmed swing highs
   swingLows: SwingPoint[];   // last 5 confirmed swing lows
-  hhCount: number;           // consecutive HH from most recent backwards
-  hlCount: number;           // consecutive HL from most recent backwards
-  lhCount: number;           // consecutive LH from most recent backwards
-  llCount: number;           // consecutive LL from most recent backwards
+  hhCount: number;           // total HH transitions in recent window (up to 4)
+  hlCount: number;           // total HL transitions in recent window (up to 4)
+  lhCount: number;           // total LH transitions in recent window (up to 4)
+  llCount: number;           // total LL transitions in recent window (up to 4)
   strength: "strong" | "moderate" | "weak" | "none";
   downStrength: "strong" | "moderate" | "weak" | "none";
   score: number;             // 0-10 uptrend score
@@ -130,54 +130,73 @@ export function analyzeDowTheory(candles: Candle[], lookback = 5): DowTheoryResu
   const recentH = highs.slice(-5);
   const recentL = lows.slice(-5);
 
-  // Count ALL HH transitions in the recent window (not just consecutive from end).
-  // Using total count avoids false negatives from a single pullback/consolidation LH
-  // that interrupts an otherwise clear uptrend.
-  let hhCount = 0;
+  // Count ALL HH/HL/LH/LL transitions across the recent window.
+  // Total count (not just consecutive from end) avoids missing uptrends where one
+  // consolidation swing formed a slightly lower high before resuming.
+  let hhCount = 0, lhCount = 0;
   for (let i = 1; i < recentH.length; i++) {
     if (recentH[i].price > recentH[i - 1].price) hhCount++;
+    else lhCount++;
   }
 
-  let hlCount = 0;
+  let hlCount = 0, llCount = 0;
   for (let i = 1; i < recentL.length; i++) {
     if (recentL[i].price > recentL[i - 1].price) hlCount++;
+    else llCount++;
   }
 
-  let lhCount = 0;
-  for (let i = 1; i < recentH.length; i++) {
-    if (recentH[i].price < recentH[i - 1].price) lhCount++;
+  // Consecutive streak from most recent (used only for strength label, not detection).
+  // Stops at first reversal — reflects how "fresh" the current run is.
+  let hhStreak = 0;
+  for (let i = recentH.length - 1; i >= 1; i--) {
+    if (recentH[i].price > recentH[i - 1].price) hhStreak++;
+    else break;
+  }
+  let hlStreak = 0;
+  for (let i = recentL.length - 1; i >= 1; i--) {
+    if (recentL[i].price > recentL[i - 1].price) hlStreak++;
+    else break;
+  }
+  let lhStreak = 0;
+  for (let i = recentH.length - 1; i >= 1; i--) {
+    if (recentH[i].price < recentH[i - 1].price) lhStreak++;
+    else break;
+  }
+  let llStreak = 0;
+  for (let i = recentL.length - 1; i >= 1; i--) {
+    if (recentL[i].price < recentL[i - 1].price) llStreak++;
+    else break;
   }
 
-  let llCount = 0;
-  for (let i = 1; i < recentL.length; i++) {
-    if (recentL[i].price < recentL[i - 1].price) llCount++;
-  }
+  // Gate 1 — overall direction: most recent confirmed swing must be higher/lower
+  //          than the oldest in the window (net move in claimed direction).
+  const overallHighsUp   = recentH[recentH.length - 1].price > recentH[0].price;
+  const overallLowsUp    = recentL[recentL.length - 1].price > recentL[0].price;
+  const overallHighsDown = recentH[recentH.length - 1].price < recentH[0].price;
+  const overallLowsDown  = recentL[recentL.length - 1].price < recentL[0].price;
 
-  // Directional gates — prevent detecting topping/bottoming patterns:
-  // 1. Overall direction must be up/down across the full recent window.
-  // 2. The most recent transition must agree with the claimed direction.
-  const overallHighsUp  = recentH.length >= 2 && recentH[recentH.length - 1].price > recentH[0].price;
-  const overallLowsUp   = recentL.length >= 2 && recentL[recentL.length - 1].price > recentL[0].price;
-  const lastHighIsHH    = recentH.length >= 2 && recentH[recentH.length - 1].price > recentH[recentH.length - 2].price;
-  const lastLowIsHL     = recentL.length >= 2 && recentL[recentL.length - 1].price > recentL[recentL.length - 2].price;
+  // Gate 2 — majority: HH transitions must outnumber LH (and HL must outnumber LL).
+  // More robust than requiring the last swing to be in trend direction — handles
+  // stocks that paused/consolidated near a high before continuing up.
+  const isUptrend   = overallHighsUp  && overallLowsUp
+                    && hhCount > lhCount && hlCount > llCount
+                    && hhCount >= 2     && hlCount >= 2;
 
-  const overallHighsDown = recentH.length >= 2 && recentH[recentH.length - 1].price < recentH[0].price;
-  const overallLowsDown  = recentL.length >= 2 && recentL[recentL.length - 1].price < recentL[0].price;
-  const lastHighIsLH     = recentH.length >= 2 && recentH[recentH.length - 1].price < recentH[recentH.length - 2].price;
-  const lastLowIsLL      = recentL.length >= 2 && recentL[recentL.length - 1].price < recentL[recentL.length - 2].price;
+  const isDowntrend = overallHighsDown && overallLowsDown
+                    && lhCount > hhCount && llCount > hlCount
+                    && lhCount >= 2     && llCount >= 2;
 
-  const isUptrend   = overallHighsUp  && overallLowsUp  && lastHighIsHH && lastLowIsHL && hhCount >= 2 && hlCount >= 2;
-  const isDowntrend = overallHighsDown && overallLowsDown && lastHighIsLH && lastLowIsLL && lhCount >= 2 && llCount >= 2;
-
+  // Strength uses the consecutive streak from the most recent swing —
+  // "strong" means the uptrend is clean right now, not just overall.
   let strength: DowTheoryResult["strength"] = "none";
-  if (hhCount >= 3 && hlCount >= 3) strength = "strong";
-  else if (hhCount >= 2 && hlCount >= 2) strength = "moderate";
-  else if (hhCount >= 1 && hlCount >= 1) strength = "weak";
+  if (hhStreak >= 2 && hlStreak >= 2)       strength = "strong";
+  else if (hhStreak >= 1 && hlStreak >= 1)  strength = "moderate";
+  else if (hhCount >= 2 && hlCount >= 2)    strength = "weak";
 
   let downStrength: DowTheoryResult["downStrength"] = "none";
-  if (lhCount >= 3 && llCount >= 3) downStrength = "strong";
-  else if (lhCount >= 2 && llCount >= 2) downStrength = "moderate";
-  else if (lhCount >= 1 && llCount >= 1) downStrength = "weak";
+  if (lhStreak >= 2 && llStreak >= 2)       downStrength = "strong";
+  else if (lhStreak >= 1 && llStreak >= 1)  downStrength = "moderate";
+  else if (lhCount >= 2 && llCount >= 2)    downStrength = "weak";
 
   const score     = Math.min(10, Math.round(((hhCount + hlCount) / 8) * 10));
   const downScore = Math.min(10, Math.round(((lhCount + llCount) / 8) * 10));
