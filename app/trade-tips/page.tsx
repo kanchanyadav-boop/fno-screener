@@ -522,7 +522,7 @@ export default function TradeTipsScreen() {
       </div>
 
       {chartSymbol && (
-        <ChartModal symbol={chartSymbol} onClose={() => setChartSymbol(null)} defaultTf="1D" />
+        <ChartModal symbol={chartSymbol} onClose={() => setChartSymbol(null)} defaultTf="1D" onlyDemandZones />
       )}
     </div>
   );

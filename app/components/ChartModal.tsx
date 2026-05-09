@@ -225,7 +225,7 @@ function SignalsPanel({ candles, symbol }: { candles: RawCandle[]; symbol: strin
 
 // ─── Candlestick Chart ─────────────────────────────────────────────────────────
 function CandleChart({
-  candles, tf, opts, srLevels, manipEvents, sdZones,
+  candles, tf, opts, srLevels, manipEvents, sdZones, cleanMode,
 }: {
   candles: RawCandle[];
   tf: TF;
@@ -233,6 +233,7 @@ function CandleChart({
   srLevels: SRLevel[];
   manipEvents: ManipulationEvent[];
   sdZones: SDZone[];
+  cleanMode?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -312,7 +313,7 @@ function CandleChart({
       }
 
       // ── OI Price Lines ──
-      if (opts) {
+      if (opts && !cleanMode) {
         candleSeries.createPriceLine({ price: opts.maxCallOIStrike, color: "#dc2626", lineWidth: 2, lineStyle: 1, axisLabelVisible: true, title: `Max Call OI ₹${opts.maxCallOIStrike}` });
         candleSeries.createPriceLine({ price: opts.maxPutOIStrike, color: "#16a34a", lineWidth: 2, lineStyle: 1, axisLabelVisible: true, title: `Max Put OI ₹${opts.maxPutOIStrike}` });
         if (opts.maxPainStrike !== opts.maxCallOIStrike && opts.maxPainStrike !== opts.maxPutOIStrike) {
@@ -361,42 +362,42 @@ function CandleChart({
       }
 
       // ── Markers: Dow Theory swings + Manipulation events ──
-      const isBull = (t: string) => ["bear_trap", "stop_hunt_low", "fakeout_down"].includes(t);
+      if (!cleanMode) {
+        const isBull = (t: string) => ["bear_trap", "stop_hunt_low", "fakeout_down"].includes(t);
 
-      const manipMarkers = manipEvents
-        .filter(e => sorted.some(c => c.time === e.time))
-        .map(e => ({
-          time: e.time as any,
-          position: (isBull(e.type) ? "belowBar" : "aboveBar") as any,
-          color: isBull(e.type)
-            ? (e.severity === "high" ? "#16a34a" : "#34d399")
-            : (e.severity === "high" ? "#dc2626" : "#f87171"),
-          shape: (isBull(e.type) ? "arrowUp" : "arrowDown") as any,
-          text: e.severity === "high"
-            ? (isBull(e.type) ? "🐻 TRAP" : "🐂 TRAP")
-            : (isBull(e.type) ? "↑ Hunt" : "↓ Hunt"),
-          size: e.severity === "high" ? 2 : 1,
+        const manipMarkers = manipEvents
+          .filter(e => sorted.some(c => c.time === e.time))
+          .map(e => ({
+            time: e.time as any,
+            position: (isBull(e.type) ? "belowBar" : "aboveBar") as any,
+            color: isBull(e.type)
+              ? (e.severity === "high" ? "#16a34a" : "#34d399")
+              : (e.severity === "high" ? "#dc2626" : "#f87171"),
+            shape: (isBull(e.type) ? "arrowUp" : "arrowDown") as any,
+            text: e.severity === "high"
+              ? (isBull(e.type) ? "🐻 TRAP" : "🐂 TRAP")
+              : (isBull(e.type) ? "↑ Hunt" : "↓ Hunt"),
+            size: e.severity === "high" ? 2 : 1,
+          }));
+
+        const dtLookback = tf === "1W" ? 3 : 5;
+        const dtLimit    = tf === "5M" ? 6 : tf === "1D" ? 10 : tf === "1W" ? 8 : 8;
+        const dowRaw = findDowMarkers(sorted, dtLookback, dtLimit);
+        const dowMarkers = dowRaw.map(m => ({
+          time: m.time as any,
+          position: (m.isHigh ? "aboveBar" : "belowBar") as any,
+          color: m.isUp ? "#10b981" : "#ef4444",
+          shape: "circle" as any,
+          text: m.isUp ? (m.isHigh ? "HH" : "HL") : (m.isHigh ? "LH" : "LL"),
+          size: 1,
         }));
 
-      // Dow Theory pivot markers — lookback/limit tuned per timeframe
-      const dtLookback = tf === "1W" ? 3 : 5;
-      const dtLimit    = tf === "5M" ? 6 : tf === "1D" ? 10 : tf === "1W" ? 8 : 8;
-      const dowRaw = findDowMarkers(sorted, dtLookback, dtLimit);
-      const dowMarkers = dowRaw.map(m => ({
-        time: m.time as any,
-        position: (m.isHigh ? "aboveBar" : "belowBar") as any,
-        color: m.isUp ? "#10b981" : "#ef4444",
-        shape: "circle" as any,
-        text: m.isUp ? (m.isHigh ? "HH" : "HL") : (m.isHigh ? "LH" : "LL"),
-        size: 1,
-      }));
+        const allMarkers = [...dowMarkers, ...manipMarkers]
+          .sort((a, b) => (a.time as number) - (b.time as number));
 
-      // Dow Theory markers rendered first so manipulation arrows paint on top
-      const allMarkers = [...dowMarkers, ...manipMarkers]
-        .sort((a, b) => (a.time as number) - (b.time as number));
-
-      if (allMarkers.length > 0 && (LWC as any).createSeriesMarkers) {
-        (LWC as any).createSeriesMarkers(candleSeries, allMarkers);
+        if (allMarkers.length > 0 && (LWC as any).createSeriesMarkers) {
+          (LWC as any).createSeriesMarkers(candleSeries, allMarkers);
+        }
       }
 
       chart.timeScale().fitContent();
@@ -409,13 +410,13 @@ function CandleChart({
 
     load();
     return () => { destroyed = true; ro?.disconnect(); chartInstance?.remove(); };
-  }, [candles, tf, opts, srLevels, manipEvents, sdZones]);
+  }, [candles, tf, opts, srLevels, manipEvents, sdZones, cleanMode]);
 
   return <div ref={containerRef} className="w-full h-full rounded-lg overflow-hidden" />;
 }
 
 // ─── Main Modal ───────────────────────────────────────────────────────────────
-export function ChartModal({ symbol, onClose, defaultTf = "1H", hideSignals = false }: { symbol: string; onClose: () => void; defaultTf?: TF; hideSignals?: boolean }) {
+export function ChartModal({ symbol, onClose, defaultTf = "1H", hideSignals = false, onlyDemandZones = false }: { symbol: string; onClose: () => void; defaultTf?: TF; hideSignals?: boolean; onlyDemandZones?: boolean }) {
   const [chartData, setChartData] = useState<ChartData | null>(null);
   const [opts, setOpts] = useState<OptionsData | null>(null);
   const [chartLoading, setChartLoading] = useState(true);
@@ -500,12 +501,12 @@ export function ChartModal({ symbol, onClose, defaultTf = "1H", hideSignals = fa
               <span className="font-mono font-semibold text-gray-800 dark:text-gray-200">₹{price.toFixed(2)}</span>
               <span className={`font-mono text-sm font-semibold px-2 py-0.5 rounded ${chg >= 0 ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>{chg >= 0 ? "+" : ""}{chg.toFixed(2)}%</span>
             </>}
-            {opts && !optsLoading && <>
+            {opts && !optsLoading && !onlyDemandZones && <>
               <span className="hidden sm:inline text-[10px] px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200 font-mono">R ₹{opts.maxCallOIStrike}</span>
               <span className="hidden sm:inline text-[10px] px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200 font-mono">S ₹{opts.maxPutOIStrike}</span>
               <span className="hidden sm:inline text-[10px] px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 border border-orange-200 font-mono">Pain ₹{opts.maxPainStrike}</span>
             </>}
-            {!hideSignals && highSeverityCount > 0 && (
+            {!hideSignals && !onlyDemandZones && highSeverityCount > 0 && (
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 border border-purple-200 font-semibold animate-pulse">
                 ⚡ {highSeverityCount} Manipulation Signal{highSeverityCount > 1 ? "s" : ""}
               </span>
@@ -518,7 +519,7 @@ export function ChartModal({ symbol, onClose, defaultTf = "1H", hideSignals = fa
         <div className="flex items-center px-5 pt-0 border-b border-gray-100 dark:border-gray-800 shrink-0">
           {([
             ["chart", "📈 Chart"],
-            ...(!hideSignals ? [["signals", `⚡ Signals${signals1H.length > 0 ? ` (${signals1H.length})` : ""}`] as [Tab, string]] : []),
+            ...(!hideSignals && !onlyDemandZones ? [["signals", `⚡ Signals${signals1H.length > 0 ? ` (${signals1H.length})` : ""}`] as [Tab, string]] : []),
             ["oi", "🔢 OI"],
           ] as [Tab, string][]).map(([t, label]) => (
             <button key={t} onClick={() => setTab(t)}
@@ -553,53 +554,66 @@ export function ChartModal({ symbol, onClose, defaultTf = "1H", hideSignals = fa
                 </div>
                 <div className="hidden sm:flex flex-wrap gap-3 ml-2 text-[10px] text-gray-500">
                   <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 bg-amber-400" />EMA 20</span>
-                  {!hideSignals && <>
-                    <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 bg-green-500" />Support</span>
-                    <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 bg-red-500" />Resistance</span>
-                    <span className="flex items-center gap-1"><span className="inline-block w-4 h-3 rounded-sm bg-green-500/20 border border-green-500" />Demand</span>
-                    <span className="flex items-center gap-1"><span className="inline-block w-4 h-3 rounded-sm bg-red-500/20 border border-red-500" />Supply</span>
-                  </>}
-                  <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />HH/HL</span>
-                  <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-red-500" />LH/LL</span>
+                  {onlyDemandZones
+                    ? <span className="flex items-center gap-1"><span className="inline-block w-4 h-3 rounded-sm bg-green-500/20 border border-green-500" />Demand Zone</span>
+                    : !hideSignals && <>
+                        <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 bg-green-500" />Support</span>
+                        <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 bg-red-500" />Resistance</span>
+                        <span className="flex items-center gap-1"><span className="inline-block w-4 h-3 rounded-sm bg-green-500/20 border border-green-500" />Demand</span>
+                        <span className="flex items-center gap-1"><span className="inline-block w-4 h-3 rounded-sm bg-red-500/20 border border-red-500" />Supply</span>
+                        <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />HH/HL</span>
+                        <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-red-500" />LH/LL</span>
+                      </>
+                  }
                 </div>
               </div>
 
               {/* Level badges — scrollable strip */}
-              {(srLevels.length > 0 || dowResult1d) && (
+              {(srLevels.length > 0 || dowResult1d || sdZones.length > 0) && (
                 <div className="shrink-0 mx-4 mb-2 flex gap-1.5 overflow-x-auto pb-1">
-                  {/* Dow Theory 1D summary badge */}
-                  {dowResult1d && dowResult1d.strength !== "none" && (
-                    <span className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full font-semibold border ${
-                      dowResult1d.strength === "strong"
-                        ? "bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-700"
-                        : dowResult1d.strength === "moderate"
-                          ? "bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-700"
-                          : "bg-teal-100 text-teal-800 border-teal-300 dark:bg-teal-900/30 dark:text-teal-400 dark:border-teal-700"
-                    }`}>
-                      Dow 1D:{" "}
-                      {dowResult1d.strength === "strong" ? "Strong ↑↑" : dowResult1d.strength === "moderate" ? "Uptrend ↑" : "Developing ↗"}
-                      {" "}({dowResult1d.hhCount}HH · {dowResult1d.hlCount}HL)
-                    </span>
+                  {onlyDemandZones ? (
+                    // Demand-zone mode: show only demand zone badges
+                    sdZones.filter(z => z.type === "demand").map((z, i) => (
+                      <span key={`dz-${i}`} className="shrink-0 text-[10px] px-2 py-0.5 rounded-full font-mono border bg-green-50 text-green-800 border-green-400 dark:bg-green-950/30 dark:text-green-400">
+                        Demand ₹{z.bottom.toFixed(0)}–{z.top.toFixed(0)}{z.fresh ? " ✦" : ""}
+                      </span>
+                    ))
+                  ) : (
+                    <>
+                      {dowResult1d && dowResult1d.strength !== "none" && (
+                        <span className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full font-semibold border ${
+                          dowResult1d.strength === "strong"
+                            ? "bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-700"
+                            : dowResult1d.strength === "moderate"
+                              ? "bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-700"
+                              : "bg-teal-100 text-teal-800 border-teal-300 dark:bg-teal-900/30 dark:text-teal-400 dark:border-teal-700"
+                        }`}>
+                          Dow 1D:{" "}
+                          {dowResult1d.strength === "strong" ? "Strong ↑↑" : dowResult1d.strength === "moderate" ? "Uptrend ↑" : "Developing ↗"}
+                          {" "}({dowResult1d.hhCount}HH · {dowResult1d.hlCount}HL)
+                        </span>
+                      )}
+                      {!hideSignals && srLevels.slice(0, 6).map(sr => (
+                        <span key={sr.label} className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full font-mono border ${sr.type === "resistance" ? "bg-red-50 text-red-700 border-red-200" : "bg-green-50 text-green-700 border-green-200"}`}>
+                          {sr.label} ₹{sr.price} ({sr.strength}×)
+                        </span>
+                      ))}
+                      {opts && <>
+                        <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full font-mono border bg-red-100 text-red-800 border-red-300">Call OI ₹{opts.maxCallOIStrike}</span>
+                        <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full font-mono border bg-green-100 text-green-800 border-green-300">Put OI ₹{opts.maxPutOIStrike}</span>
+                        <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full font-mono border bg-orange-100 text-orange-800 border-orange-300">Pain ₹{opts.maxPainStrike}</span>
+                      </>}
+                      {!hideSignals && sdZones.map((z, i) => (
+                        <span key={`sdz-${i}`} className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full font-mono border ${
+                          z.type === "demand"
+                            ? "bg-green-50 text-green-800 border-green-400 dark:bg-green-950/30 dark:text-green-400"
+                            : "bg-red-50 text-red-700 border-red-300 dark:bg-red-950/30 dark:text-red-400"
+                        }`}>
+                          {z.type === "demand" ? "D" : "S"} ₹{z.bottom.toFixed(0)}–{z.top.toFixed(0)}{z.fresh ? " ✦" : ""}
+                        </span>
+                      ))}
+                    </>
                   )}
-                  {!hideSignals && srLevels.slice(0, 6).map(sr => (
-                    <span key={sr.label} className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full font-mono border ${sr.type === "resistance" ? "bg-red-50 text-red-700 border-red-200" : "bg-green-50 text-green-700 border-green-200"}`}>
-                      {sr.label} ₹{sr.price} ({sr.strength}×)
-                    </span>
-                  ))}
-                  {opts && <>
-                    <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full font-mono border bg-red-100 text-red-800 border-red-300">Call OI ₹{opts.maxCallOIStrike}</span>
-                    <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full font-mono border bg-green-100 text-green-800 border-green-300">Put OI ₹{opts.maxPutOIStrike}</span>
-                    <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full font-mono border bg-orange-100 text-orange-800 border-orange-300">Pain ₹{opts.maxPainStrike}</span>
-                  </>}
-                  {!hideSignals && sdZones.map((z, i) => (
-                    <span key={`sdz-${i}`} className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full font-mono border ${
-                      z.type === "demand"
-                        ? "bg-green-50 text-green-800 border-green-400 dark:bg-green-950/30 dark:text-green-400"
-                        : "bg-red-50 text-red-700 border-red-300 dark:bg-red-950/30 dark:text-red-400"
-                    }`}>
-                      {z.type === "demand" ? "D" : "S"} ₹{z.bottom.toFixed(0)}–{z.top.toFixed(0)}{z.fresh ? " ✦" : ""}
-                    </span>
-                  ))}
                 </div>
               )}
 
@@ -612,19 +626,35 @@ export function ChartModal({ symbol, onClose, defaultTf = "1H", hideSignals = fa
                 )}
                 {chartError && <div className="flex h-full items-center justify-center text-sm text-red-500">{chartError}</div>}
                 {!chartLoading && !chartError && (
-                  <CandleChart key={tf} candles={candles} tf={tf} opts={opts} srLevels={hideSignals ? [] : srLevels} manipEvents={hideSignals ? [] : manipEvents} sdZones={hideSignals ? [] : sdZones} />
+                  <CandleChart
+                    key={tf}
+                    candles={candles}
+                    tf={tf}
+                    opts={opts}
+                    srLevels={hideSignals || onlyDemandZones ? [] : srLevels}
+                    manipEvents={hideSignals || onlyDemandZones ? [] : manipEvents}
+                    sdZones={
+                      hideSignals ? [] :
+                      onlyDemandZones ? sdZones.filter(z => z.type === "demand") :
+                      sdZones
+                    }
+                    cleanMode={onlyDemandZones}
+                  />
                 )}
               </div>
 
               {/* Compact stats row — hidden on small screens */}
               {!chartLoading && !chartError && (
-                <div className="shrink-0 hidden sm:grid grid-cols-4 gap-2 px-4 pb-4">
-                  {[
+                <div className={`shrink-0 hidden sm:grid gap-2 px-4 pb-4 ${onlyDemandZones ? "grid-cols-2" : "grid-cols-4"}`}>
+                  {(onlyDemandZones ? [
+                    { label: "EMA 20", v: (() => { const e = calcEMA(sorted as any, 20); return e.length ? `₹${e[e.length - 1].value.toFixed(2)}` : "—"; })() },
+                    { label: "Demand Zones", v: `${sdZones.filter(z => z.type === "demand").length} zone${sdZones.filter(z => z.type === "demand").length !== 1 ? "s" : ""}` },
+                  ] : [
                     { label: "EMA 20", v: (() => { const e = calcEMA(sorted as any, 20); return e.length ? `₹${e[e.length - 1].value.toFixed(2)}` : "—"; })() },
                     { label: "Avg Vol", v: fv(sorted.length ? sorted.reduce((s, c) => s + c.v, 0) / sorted.length : 0) },
                     { label: "Signals", v: `${manipEvents.length} (${manipEvents.filter(e => e.severity === "high").length} high)` },
                     { label: "S/R · Zones", v: `${srLevels.filter(s => s.type === "support").length}S ${srLevels.filter(s => s.type === "resistance").length}R · ${sdZones.filter(z => z.type === "demand").length}D ${sdZones.filter(z => z.type === "supply").length}Sz` },
-                  ].map(({ label, v }) => (
+                  ]).map(({ label, v }) => (
                     <div key={label} className="bg-gray-50 dark:bg-gray-800 rounded-xl p-2.5">
                       <div className="text-[10px] text-gray-400 mb-0.5">{label}</div>
                       <div className="text-xs font-mono font-semibold text-gray-800 dark:text-gray-100">{v}</div>
