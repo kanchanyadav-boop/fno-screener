@@ -16,18 +16,15 @@ export interface TradeTip {
 
   demandZone: DemandZoneInfo;
 
-  // Trade levels
   entry: number;
   target: number;
   stopLoss: number;
   riskReward: number;
 
-  // Position relative to zone
-  distToZonePct: number;   // % above zone top (negative = inside zone)
-  touchedZone: boolean;    // any of last 3 candles touched zone
+  distToZonePct: number;
+  touchedZone: boolean;
   bouncingFromZone: boolean;
 
-  // Reference swing prices
   lastSwingHigh: number;
   secondLastSwingHigh: number;
   lastSwingLow: number;
@@ -36,64 +33,98 @@ export interface TradeTip {
 }
 
 /**
- * Demand-zone pullback tip:
- *  1. Dow Theory uptrend confirmed (HH + HL sequence on daily).
- *  2. Last confirmed swing high is a fresh HH.
- *  3. Second-to-last swing high (prior HH, now flipped to support) is the demand zone.
- *  4. The swing low that formed between the two most recent swing highs defines the zone bottom.
- *  5. Signal fires when current price is pulling back into / near the demand zone.
+ * Demand-zone pullback tip (wave-based swing trade):
+ *
+ *  Context: uptrend confirmed by HH+HL wave sequence.
+ *
+ *  Setup:
+ *   - Most recent confirmed HH (wave top) is the TARGET.
+ *   - Prior HH (one wave back) is the DEMAND ZONE top — old resistance
+ *     that flips to support on the pullback.
+ *   - The HL that formed between those two HH (the trough of the prior
+ *     correction wave) defines the ZONE BOTTOM — the structural low of the
+ *     demand area.
+ *   - Stop is 1% below zone bottom; entry is at zone top.
+ *   - Minimum R:R of 1:3 enforced: (target-entry)/(entry-stop) ≥ 3.
+ *
+ *  Key design decisions:
+ *   - Gate is relaxed from strict isUptrend to hhCount ≥ 2 && hlCount ≥ 2
+ *     so stocks mid-pullback (where a recent LH tips isUptrend off) still fire.
+ *   - "Last HH" is found by scanning backwards through swingHighs for the
+ *     most recent pair where sh[i].price > sh[i-1].price — not just sh[last].
+ *     This handles the common case where a LH formed during the current
+ *     pullback becomes the most-recent swing high.
  */
 export function generateTradeTip(candles: Candle[]): TradeTip | null {
   const dow = analyzeDowTheory(candles);
 
-  if (!dow.isUptrend) return null;
+  // Need underlying wave uptrend structure.
+  // Deliberately NOT requiring strict isUptrend: stocks currently pulling back
+  // often form a LH that raises lhCount and breaks the strict gate, even though
+  // the wave structure is entirely intact.
+  if (dow.hhCount < 2 || dow.hlCount < 2) return null;
+  if (dow.isDowntrend) return null;
 
   const sh = dow.swingHighs;
   const sl = dow.swingLows;
 
-  if (sh.length < 2 || sl.length < 1) return null;
+  if (sh.length < 3 || sl.length < 2) return null;
 
-  const lastSH       = sh[sh.length - 1];
-  const secondLastSH = sh[sh.length - 2];
+  // ── Find the last confirmed HH pair ──────────────────────────────────────
+  // Scan backwards: find the highest index i where sh[i].price > sh[i-1].price.
+  // This skips any LH pivots that may have formed during the current pullback.
+  let lastHHIdx = -1;
+  for (let i = sh.length - 1; i >= 1; i--) {
+    if (sh[i].price > sh[i - 1].price) {
+      lastHHIdx = i;
+      break;
+    }
+  }
+  if (lastHHIdx < 1) return null;
 
-  // The last swing must be a genuine HH above the prior one
-  if (lastSH.price <= secondLastSH.price) return null;
+  const lastHH = sh[lastHHIdx];      // wave top — target
+  const prevHH = sh[lastHHIdx - 1];  // prior HH — demand zone top
 
-  // Zone bottom = swing low that formed between the two most recent swing highs.
-  // This HL anchors the demand zone from below.
+  // ── Zone boundaries ───────────────────────────────────────────────────────
+  // Zone top = prevHH (old resistance → new support).
+  // Zone bottom = the HL that formed between prevHH and lastHH, i.e. the
+  // trough of the correction wave that preceded the rally to lastHH.
+  // We take the FIRST such HL (earliest in time after prevHH) because that
+  // is where the correction wave bottomed — the natural floor of the zone.
+  const zoneTop = prevHH.price;
+
   const hlBetween = sl.find(
-    (l) => l.index > secondLastSH.index && l.index < lastSH.index
+    (l) => l.index > prevHH.index && l.index < lastHH.index && l.price < zoneTop
   );
-  const lastSL = sl[sl.length - 1];
-
-  const zoneTop    = secondLastSH.price;
   const zoneBottom = hlBetween ? hlBetween.price : zoneTop * 0.97;
 
+  if (zoneTop <= zoneBottom) return null;
+
   const entry    = zoneTop;
-  const target   = lastSH.price;
+  const target   = lastHH.price;
   const stopLoss = zoneBottom * 0.99;
 
-  const riskReward =
-    entry > stopLoss
-      ? +((target - entry) / (entry - stopLoss)).toFixed(2)
-      : 0;
+  if (stopLoss >= entry || target <= entry) return null;
 
-  const lastCandle  = candles[candles.length - 1];
+  // ── Enforce minimum 1:3 R:R ───────────────────────────────────────────────
+  const riskReward = +((target - entry) / (entry - stopLoss)).toFixed(2);
+  if (riskReward < 3) return null;
+
+  const lastCandle   = candles[candles.length - 1];
   const currentPrice = lastCandle.c;
 
-  // If price has already broken well below the zone, the setup has failed
+  // Zone blown — price already broke well below the demand area
   if (currentPrice < zoneBottom * 0.985) return null;
 
-  // % above zone top (negative means inside or below zone)
+  // Still at the wave top or above it — pullback hasn't started, no setup yet
+  if (currentPrice > lastHH.price * 1.005) return null;
+
   const distToZonePct = +((currentPrice - zoneTop) / zoneTop * 100).toFixed(2);
 
-  // Touch: any of the last 3 candles brought their low into the zone
   const last3 = candles.slice(-3);
   const touchedZone = last3.some(
     (c) => c.l <= zoneTop * 1.01 && c.l >= zoneBottom * 0.97
   );
-
-  // Bounce: touched zone AND last candle is bullish off it
   const bouncingFromZone =
     touchedZone &&
     lastCandle.c > lastCandle.o &&
@@ -108,23 +139,20 @@ export function generateTradeTip(candles: Candle[]): TradeTip | null {
     confidence = bouncingFromZone && dow.strength !== "weak" ? "high" : "medium";
   } else if (distToZonePct > 2.0 && distToZonePct <= 5.0) {
     signal = "NEAR";
-    confidence = dow.strength === "strong" ? "medium" : "low";
-  } else if (distToZonePct > 5.0 && distToZonePct <= 10.0) {
+    confidence = "medium";
+  } else if (distToZonePct > 5.0 && distToZonePct <= 15.0) {
     signal = "WATCH";
     confidence = "low";
   } else {
-    signal = "NONE";
-    confidence = "low";
+    return null; // Too far from zone, no actionable setup
   }
+
+  const lastSL = sl[sl.length - 1];
 
   return {
     signal,
     confidence,
-    demandZone: {
-      top: zoneTop,
-      bottom: zoneBottom,
-      anchorDate: secondLastSH.date,
-    },
+    demandZone: { top: zoneTop, bottom: zoneBottom, anchorDate: prevHH.date },
     entry,
     target,
     stopLoss,
@@ -132,8 +160,8 @@ export function generateTradeTip(candles: Candle[]): TradeTip | null {
     distToZonePct,
     touchedZone,
     bouncingFromZone,
-    lastSwingHigh: lastSH.price,
-    secondLastSwingHigh: secondLastSH.price,
+    lastSwingHigh: lastHH.price,
+    secondLastSwingHigh: prevHH.price,
     lastSwingLow: lastSL.price,
     dow,
   };
