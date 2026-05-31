@@ -5,7 +5,7 @@ import { Candle } from "./types";
  * Production URL: your Vercel deployment (e.g. https://fno-screener.vercel.app)
  * Set this after deploying with `vercel deploy`.
  */
-const VERCEL_URL = "https://your-app.vercel.app"; // ← update after first deploy
+const VERCEL_URL = "https://fno-screener.vercel.app";
 
 const DEV_URL =
   Platform.OS === "android" ? "http://10.0.2.2:3000" : "http://localhost:3000";
