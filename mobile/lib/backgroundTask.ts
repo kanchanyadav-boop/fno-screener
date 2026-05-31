@@ -1,4 +1,4 @@
-import * as BackgroundFetch from "expo-background-fetch";
+import * as BackgroundTask from "expo-background-task";
 import * as TaskManager from "expo-task-manager";
 import { fetchPrices } from "./api";
 import { loadSetups, updateSetupPrices, getAlertedIds, markAlerted, clearAlert } from "./storage";
@@ -12,9 +12,8 @@ import {
 export const PRICE_CHECK_TASK = "fno-price-check";
 
 // ─── Background task definition ───────────────────────────────────────────────
-// Runs every ~15 min when app is closed (iOS gives ~30s budget).
-// We skip the full FNO scan here (200+ stocks = too slow) — that runs
-// via the Vercel cron job instead. We only check watchlist + tip log prices.
+// Runs every ~15 min when app is closed.
+// Only checks watchlist + tip log prices — full FNO scan runs via Vercel cron.
 
 TaskManager.defineTask(PRICE_CHECK_TASK, async () => {
   try {
@@ -25,7 +24,6 @@ TaskManager.defineTask(PRICE_CHECK_TASK, async () => {
       const syms = [...new Set(activeSetups.map((s) => s.symbol))];
       const prices = await fetchPrices(syms);
       if (Object.keys(prices).length > 0) {
-        // Entry zone alerts for watchlist setups
         const alerted = await getAlertedIds();
         for (const setup of activeSetups) {
           const pd = prices[setup.symbol];
@@ -39,7 +37,6 @@ TaskManager.defineTask(PRICE_CHECK_TASK, async () => {
           }
         }
 
-        // Target / SL notifications
         const updated = await updateSetupPrices(prices);
         for (const prev of activeSetups) {
           const next = updated.find((s) => s.id === prev.id);
@@ -53,7 +50,7 @@ TaskManager.defineTask(PRICE_CHECK_TASK, async () => {
       }
     }
 
-    // 3. Update tip log prices
+    // 2. Update tip log prices
     const tipLog = await loadTipLog();
     const activeSyms = [...new Set(
       tipLog.filter((e) => e.status === "active").map((e) => e.symbol)
@@ -65,9 +62,9 @@ TaskManager.defineTask(PRICE_CHECK_TASK, async () => {
       }
     }
 
-    return BackgroundFetch.BackgroundFetchResult.NewData;
+    return BackgroundTask.BackgroundTaskResult.Success;
   } catch {
-    return BackgroundFetch.BackgroundFetchResult.Failed;
+    return BackgroundTask.BackgroundTaskResult.Failed;
   }
 });
 
@@ -75,10 +72,8 @@ export async function registerBackgroundTask(): Promise<void> {
   try {
     const isRegistered = await TaskManager.isTaskRegisteredAsync(PRICE_CHECK_TASK);
     if (!isRegistered) {
-      await BackgroundFetch.registerTaskAsync(PRICE_CHECK_TASK, {
-        minimumInterval: 15 * 60, // iOS minimum; Android runs more frequently
-        stopOnTerminate: false,
-        startOnBoot: true,
+      await BackgroundTask.registerTaskAsync(PRICE_CHECK_TASK, {
+        minimumInterval: 15 * 60,
       });
     }
   } catch { /* silently fails in Expo Go — works in production build */ }

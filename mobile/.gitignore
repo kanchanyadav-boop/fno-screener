@@ -12,3 +12,4 @@ build/
 android/
 ios/
 *.orig.*
+expo-env.d.ts
