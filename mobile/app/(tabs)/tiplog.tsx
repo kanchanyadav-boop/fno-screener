@@ -1,19 +1,26 @@
 import React, { useState, useCallback } from "react";
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity,
-  SafeAreaView, RefreshControl,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { loadTipLog, updateTipLogPrices, TipLogEntry } from "../../lib/tipLog";
 import { fetchPrices } from "../../lib/api";
 
 type Filter = "all" | "active" | "success" | "failed";
 
+const C = {
+  bg: "#f8fafc", card: "#ffffff", border: "#e2e8f0",
+  text: "#0f172a", text2: "#64748b", text3: "#94a3b8",
+  long: "#16a34a", short: "#dc2626", near: "#d97706", blue: "#2563eb",
+  longBg: "#dcfce7", shortBg: "#fee2e2", nearBg: "#fef3c7", blueBg: "#dbeafe",
+};
+
 const STATUS_COLOR: Record<TipLogEntry["status"], string> = {
-  active:  "#60a5fa",
-  success: "#4ade80",
-  failed:  "#f87171",
-  expired: "#6b7280",
+  active:  C.blue,
+  success: C.long,
+  failed:  C.short,
+  expired: C.text3,
 };
 
 const STATUS_LABEL: Record<TipLogEntry["status"], string> = {
@@ -22,11 +29,6 @@ const STATUS_LABEL: Record<TipLogEntry["status"], string> = {
   failed:  "✗ Failed",
   expired: "Expired",
 };
-
-function fmt(n: number): string {
-  if (n >= 1000) return (n / 1000).toFixed(1) + "k";
-  return n.toFixed(0);
-}
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -37,85 +39,77 @@ function timeAgo(iso: string): string {
   return "Just now";
 }
 
-// ── Log Entry Card ────────────────────────────────────────────────────────────
 function LogCard({ entry: e }: { entry: TipLogEntry }) {
   const isShort = e.direction === "short";
   const statusColor = STATUS_COLOR[e.status];
-  const dirColor = isShort ? "#f87171" : "#4ade80";
+  const dirColor = isShort ? C.short : C.long;
+  const dirBg = isShort ? C.shortBg : C.longBg;
   const pnl = e.currentPnlPct;
-  const pnlColor = pnl == null ? "#6b7280" : pnl >= 0 ? "#4ade80" : "#f87171";
+  const pnlColor = pnl == null ? C.text3 : pnl >= 0 ? C.long : C.short;
 
   return (
-    <View style={[cardStyles.card, { borderLeftColor: statusColor }]}>
-      {/* Row 1: symbol + status + price */}
-      <View style={cardStyles.row}>
-        <View style={cardStyles.left}>
-          <Text style={cardStyles.symbol}>{e.symbol}</Text>
-          <View style={[cardStyles.dirTag, { backgroundColor: isShort ? "#450a0a" : "#14532d" }]}>
-            <Text style={[cardStyles.dirTagText, { color: dirColor }]}>{isShort ? "SHORT" : "LONG"}</Text>
+    <View style={[cs.card, { borderLeftColor: statusColor }]}>
+      <View style={cs.row}>
+        <View style={cs.left}>
+          <Text style={cs.symbol}>{e.symbol}</Text>
+          <View style={[cs.dirTag, { backgroundColor: dirBg }]}>
+            <Text style={[cs.dirTagText, { color: dirColor }]}>{isShort ? "SHORT" : "LONG"}</Text>
           </View>
-          <View style={[cardStyles.sigTag, { backgroundColor: statusColor + "22" }]}>
-            <Text style={[cardStyles.sigTagText, { color: statusColor }]}>{STATUS_LABEL[e.status]}</Text>
+          <View style={[cs.sigTag, { backgroundColor: statusColor + "18" }]}>
+            <Text style={[cs.sigTagText, { color: statusColor }]}>{STATUS_LABEL[e.status]}</Text>
           </View>
-          <View style={[cardStyles.confTag, { opacity: e.confidence === "high" ? 1 : 0.6 }]}>
-            <Text style={cardStyles.confText}>{e.confidence}</Text>
+          <View style={[cs.confTag, { opacity: e.confidence === "high" ? 1 : 0.6 }]}>
+            <Text style={cs.confText}>{e.confidence}</Text>
           </View>
         </View>
-        <View style={cardStyles.right}>
+        <View style={cs.right}>
           {e.lastPrice != null && (
-            <Text style={cardStyles.price}>₹{e.lastPrice.toFixed(2)}</Text>
+            <Text style={cs.price}>₹{e.lastPrice.toFixed(2)}</Text>
           )}
           {pnl != null && (
-            <Text style={[cardStyles.pnl, { color: pnlColor }]}>
+            <Text style={[cs.pnl, { color: pnlColor }]}>
               {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)}%
             </Text>
           )}
         </View>
       </View>
 
-      {/* Row 2: levels */}
-      <View style={cardStyles.levelsRow}>
+      <View style={cs.levelsRow}>
         {([
-          ["Entry",  e.entry,    "#60a5fa"],
-          ["Target", e.target,   isShort ? "#f87171" : "#4ade80"],
-          ["Stop",   e.stopLoss, "#f87171"],
-          ["R:R",    null,       "#a3a3a3"],
+          ["Entry",  e.entry,    C.blue],
+          ["Target", e.target,   isShort ? C.short : C.long],
+          ["Stop",   e.stopLoss, C.short],
+          ["R:R",    null,       C.text3],
         ] as [string, number | null, string][]).map(([label, val, color]) => (
-          <View key={label} style={cardStyles.levelCol}>
-            <Text style={cardStyles.levelLabel}>{label}</Text>
-            <Text style={[cardStyles.levelValue, { color }]}>
-              {val != null ? `₹${fmt(val)}` : `1:${e.riskReward.toFixed(1)}`}
+          <View key={label} style={cs.levelCol}>
+            <Text style={cs.levelLabel}>{label}</Text>
+            <Text style={[cs.levelValue, { color }]}>
+              {val != null ? `₹${val.toFixed(2)}` : `1:${e.riskReward.toFixed(1)}`}
             </Text>
           </View>
         ))}
       </View>
 
-      {/* Row 3: exit info OR signal/zone info */}
-      <View style={cardStyles.footer}>
-        <Text style={cardStyles.footerGray}>{timeAgo(e.loggedAt)} · {e.signal}</Text>
+      <View style={cs.footer}>
+        <Text style={cs.footerGray}>{timeAgo(e.loggedAt)} · {e.signal}</Text>
         {e.status !== "active" && e.exitPrice != null ? (
-          <Text style={[cardStyles.footerGray, { color: statusColor }]}>
+          <Text style={[cs.footerGray, { color: statusColor }]}>
             Exit ₹{e.exitPrice.toFixed(2)}
           </Text>
         ) : (
-          <Text style={cardStyles.footerGray}>
-            Zone ₹{fmt(e.zone.bottom)}–{fmt(e.zone.top)}
+          <Text style={cs.footerGray}>
+            Zone ₹{e.zone.bottom.toFixed(2)}–{e.zone.top.toFixed(2)}
           </Text>
         )}
       </View>
 
-      {/* Max favorable / adverse bar for active */}
       {e.status === "active" && e.lastPrice != null && (
-        <View style={cardStyles.barWrap}>
+        <View style={cs.barWrap}>
           {e.maxFavorablePct > 0 && (
-            <Text style={[cardStyles.barLabel, { color: "#4ade80" }]}>
-              ↑ {e.maxFavorablePct.toFixed(1)}%
-            </Text>
+            <Text style={[cs.barLabel, { color: C.long }]}>↑ {e.maxFavorablePct.toFixed(1)}%</Text>
           )}
           {e.maxAdversePct > 0 && (
-            <Text style={[cardStyles.barLabel, { color: "#f87171" }]}>
-              ↓ {e.maxAdversePct.toFixed(1)}%
-            </Text>
+            <Text style={[cs.barLabel, { color: C.short }]}>↓ {e.maxAdversePct.toFixed(1)}%</Text>
           )}
         </View>
       )}
@@ -123,17 +117,15 @@ function LogCard({ entry: e }: { entry: TipLogEntry }) {
   );
 }
 
-// ── Stat Box ─────────────────────────────────────────────────────────────────
 function StatBox({ label, value, color }: { label: string; value: string; color: string }) {
   return (
-    <View style={statStyles.box}>
-      <Text style={[statStyles.value, { color }]}>{value}</Text>
-      <Text style={statStyles.label}>{label}</Text>
+    <View style={ss.box}>
+      <Text style={[ss.value, { color }]}>{value}</Text>
+      <Text style={ss.label}>{label}</Text>
     </View>
   );
 }
 
-// ── Screen ────────────────────────────────────────────────────────────────────
 export default function TipLogTab() {
   const [entries,    setEntries]    = useState<TipLogEntry[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -145,7 +137,6 @@ export default function TipLogTab() {
     try {
       const current = await loadTipLog();
       setEntries(current);
-
       const activeSyms = [...new Set(
         current.filter((e) => e.status === "active").map((e) => e.symbol)
       )];
@@ -170,89 +161,74 @@ export default function TipLogTab() {
     }, [loadAndSync])
   );
 
-  const filtered = entries.filter((e) => {
-    if (filter === "all") return true;
-    return e.status === filter;
-  });
+  const filtered = entries.filter((e) => filter === "all" || e.status === filter);
 
-  // Stats
   const total   = entries.length;
   const active  = entries.filter((e) => e.status === "active").length;
   const success = entries.filter((e) => e.status === "success").length;
   const failed  = entries.filter((e) => e.status === "failed").length;
   const closed  = success + failed;
   const winRate = closed > 0 ? Math.round((success / closed) * 100) : null;
-
-  const avgRR = entries.length > 0
+  const avgRR   = entries.length > 0
     ? (entries.reduce((s, e) => s + e.riskReward, 0) / entries.length).toFixed(1)
     : null;
 
   const filterTabs: { key: Filter; label: string; count: number; color: string }[] = [
-    { key: "all",     label: "All",       count: total,   color: "#94a3b8" },
-    { key: "active",  label: "Active",    count: active,  color: "#60a5fa" },
-    { key: "success", label: "✓ Success", count: success, color: "#4ade80" },
-    { key: "failed",  label: "✗ Failed",  count: failed,  color: "#f87171" },
+    { key: "all",     label: "All",       count: total,   color: C.text3 },
+    { key: "active",  label: "Active",    count: active,  color: C.blue },
+    { key: "success", label: "✓ Success", count: success, color: C.long },
+    { key: "failed",  label: "✗ Failed",  count: failed,  color: C.short },
   ];
 
   return (
-    <SafeAreaView style={styles.safe}>
-      {/* Header */}
-      <View style={styles.header}>
+    <SafeAreaView style={s.safe}>
+      <View style={s.header}>
         <View>
-          <Text style={styles.title}>Tip Performance</Text>
-          <Text style={styles.subtitle}>All auto-logged tips · latest first</Text>
+          <Text style={s.title}>Tip Performance</Text>
+          <Text style={s.subtitle}>All auto-logged tips · latest first</Text>
         </View>
         {lastSync && (
-          <Text style={styles.syncLabel}>
+          <Text style={s.syncLabel}>
             {lastSync.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
           </Text>
         )}
       </View>
 
-      {/* Stats */}
       {total > 0 && (
-        <View style={styles.statsRow}>
-          <StatBox label="Total"   value={String(total)}   color="#94a3b8" />
-          <StatBox label="Active"  value={String(active)}  color="#60a5fa" />
-          <StatBox label="Success" value={String(success)} color="#4ade80" />
-          <StatBox label="Failed"  value={String(failed)}  color="#f87171" />
+        <View style={s.statsRow}>
+          <StatBox label="Total"   value={String(total)}   color={C.text2} />
+          <StatBox label="Active"  value={String(active)}  color={C.blue} />
+          <StatBox label="Success" value={String(success)} color={C.long} />
+          <StatBox label="Failed"  value={String(failed)}  color={C.short} />
           <StatBox label="Win %"   value={winRate != null ? `${winRate}%` : "–"}
-            color={winRate != null && winRate >= 50 ? "#4ade80" : "#f87171"} />
+            color={winRate != null && winRate >= 50 ? C.long : C.short} />
         </View>
       )}
 
-      {/* Overall performance row */}
       {closed > 0 && (
-        <View style={styles.perfRow}>
-          <View style={[styles.perfBadge, { backgroundColor: "#14532d" }]}>
-            <Text style={[styles.perfText, { color: "#4ade80" }]}>
-              ✓ {success} success
-            </Text>
+        <View style={s.perfRow}>
+          <View style={[s.perfBadge, { backgroundColor: "#dcfce7" }]}>
+            <Text style={[s.perfText, { color: "#166534" }]}>✓ {success} success</Text>
           </View>
-          <View style={[styles.perfBadge, { backgroundColor: "#450a0a" }]}>
-            <Text style={[styles.perfText, { color: "#f87171" }]}>
-              ✗ {failed} failed
-            </Text>
+          <View style={[s.perfBadge, { backgroundColor: "#fee2e2" }]}>
+            <Text style={[s.perfText, { color: "#991b1b" }]}>✗ {failed} failed</Text>
           </View>
           {avgRR && (
-            <View style={[styles.perfBadge, { backgroundColor: "#1e293b" }]}>
-              <Text style={[styles.perfText, { color: "#94a3b8" }]}>
-                Avg R:R 1:{avgRR}
-              </Text>
+            <View style={[s.perfBadge, { backgroundColor: "#f1f5f9" }]}>
+              <Text style={[s.perfText, { color: C.text2 }]}>Avg R:R 1:{avgRR}</Text>
             </View>
           )}
         </View>
       )}
 
-      {/* Filter chips */}
-      <View style={styles.filterRow}>
+      <View style={s.filterRow}>
         {filterTabs.map((f) => (
           <TouchableOpacity
             key={f.key}
-            style={[styles.chip, filter === f.key && { borderColor: f.color, backgroundColor: f.color + "22" }]}
+            style={[s.chip, filter === f.key && { borderColor: f.color, backgroundColor: f.color + "18" }]}
             onPress={() => setFilter(f.key)}
           >
-            <Text style={[styles.chipText, { color: filter === f.key ? f.color : "#6b7280" }]}>
+            <Text style={[s.chipText, { color: filter === f.key ? f.color : C.text2 }]}>
               {f.label} ({f.count})
             </Text>
           </TouchableOpacity>
@@ -262,23 +238,19 @@ export default function TipLogTab() {
       <FlatList
         data={filtered}
         keyExtractor={(e) => e.id}
-        contentContainerStyle={styles.list}
+        contentContainerStyle={s.list}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => loadAndSync(false)}
-            tintColor="#3b82f6"
-          />
+          <RefreshControl refreshing={refreshing} onRefresh={() => loadAndSync(false)} tintColor={C.blue} />
         }
         renderItem={({ item }) => <LogCard entry={item} />}
         ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>
+          <View style={s.empty}>
+            <Text style={s.emptyTitle}>
               {total === 0 ? "No tips logged yet" : `No ${filter} tips`}
             </Text>
-            <Text style={styles.emptyHint}>
+            <Text style={s.emptyHint}>
               {total === 0
-                ? "Run a scan from the Screener tab — all found tips will be automatically logged here."
+                ? "Run a scan from the Zone Tips tab — all found tips will be automatically logged here."
                 : "Try the All filter."}
             </Text>
           </View>
@@ -288,51 +260,51 @@ export default function TipLogTab() {
   );
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────────
-const cardStyles = StyleSheet.create({
+const cs = StyleSheet.create({
   card: {
-    backgroundColor: "#111827", borderRadius: 14, padding: 14, marginBottom: 10,
-    borderWidth: 1, borderColor: "#1f2937", borderLeftWidth: 4,
+    backgroundColor: C.card, borderRadius: 14, padding: 14, marginBottom: 10,
+    borderWidth: 1, borderColor: C.border, borderLeftWidth: 4,
+    shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
   },
-  row:          { flexDirection: "row", justifyContent: "space-between", marginBottom: 10 },
-  left:         { flexDirection: "row", alignItems: "center", gap: 6, flex: 1, flexWrap: "wrap" },
-  right:        { alignItems: "flex-end" },
-  symbol:       { color: "#f1f5f9", fontFamily: "monospace", fontWeight: "700", fontSize: 15 },
-  dirTag:       { borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 },
-  dirTagText:   { fontSize: 9, fontWeight: "700" },
-  sigTag:       { borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 },
-  sigTagText:   { fontSize: 10, fontWeight: "700" },
-  confTag:      { borderRadius: 5, paddingHorizontal: 5, paddingVertical: 2, backgroundColor: "#1f2937" },
-  confText:     { color: "#94a3b8", fontSize: 9 },
-  price:        { color: "#f1f5f9", fontFamily: "monospace", fontWeight: "600", fontSize: 13 },
-  pnl:          { fontFamily: "monospace", fontSize: 11, marginTop: 1 },
-  levelsRow:    { flexDirection: "row", justifyContent: "space-between", marginBottom: 8 },
-  levelCol:     { alignItems: "center", flex: 1 },
-  levelLabel:   { color: "#6b7280", fontSize: 9, textTransform: "uppercase", letterSpacing: 0.4 },
-  levelValue:   { fontFamily: "monospace", fontSize: 12, fontWeight: "700", marginTop: 2 },
-  footer:       { flexDirection: "row", justifyContent: "space-between" },
-  footerGray:   { color: "#4b5563", fontSize: 10 },
-  barWrap:      { flexDirection: "row", gap: 12, marginTop: 6 },
-  barLabel:     { fontSize: 10, fontFamily: "monospace" },
+  row:        { flexDirection: "row", justifyContent: "space-between", marginBottom: 10 },
+  left:       { flexDirection: "row", alignItems: "center", gap: 6, flex: 1, flexWrap: "wrap" },
+  right:      { alignItems: "flex-end" },
+  symbol:     { color: C.text, fontFamily: "monospace", fontWeight: "700", fontSize: 15 },
+  dirTag:     { borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 },
+  dirTagText: { fontSize: 9, fontWeight: "700" },
+  sigTag:     { borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 },
+  sigTagText: { fontSize: 10, fontWeight: "700" },
+  confTag:    { borderRadius: 5, paddingHorizontal: 5, paddingVertical: 2, backgroundColor: "#f1f5f9" },
+  confText:   { color: C.text2, fontSize: 9 },
+  price:      { color: C.text, fontFamily: "monospace", fontWeight: "600", fontSize: 13 },
+  pnl:        { fontFamily: "monospace", fontSize: 11, marginTop: 1 },
+  levelsRow:  { flexDirection: "row", justifyContent: "space-between", marginBottom: 8 },
+  levelCol:   { alignItems: "center", flex: 1 },
+  levelLabel: { color: C.text3, fontSize: 9, textTransform: "uppercase", letterSpacing: 0.4 },
+  levelValue: { fontFamily: "monospace", fontSize: 12, fontWeight: "700", marginTop: 2 },
+  footer:     { flexDirection: "row", justifyContent: "space-between" },
+  footerGray: { color: C.text3, fontSize: 10 },
+  barWrap:    { flexDirection: "row", gap: 12, marginTop: 6 },
+  barLabel:   { fontSize: 10, fontFamily: "monospace" },
 });
 
-const statStyles = StyleSheet.create({
+const ss = StyleSheet.create({
   box:   { flex: 1, alignItems: "center" },
   value: { fontSize: 17, fontWeight: "700", fontFamily: "monospace" },
-  label: { color: "#6b7280", fontSize: 9, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 1 },
+  label: { color: C.text3, fontSize: 9, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 1 },
 });
 
-const styles = StyleSheet.create({
-  safe:      { flex: 1, backgroundColor: "#0f172a" },
-  header:    { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 8, flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" },
-  title:     { color: "#f1f5f9", fontSize: 20, fontWeight: "700" },
-  subtitle:  { color: "#64748b", fontSize: 12, marginTop: 2 },
-  syncLabel: { color: "#374151", fontSize: 10, marginTop: 6 },
+const s = StyleSheet.create({
+  safe:      { flex: 1, backgroundColor: C.bg },
+  header:    { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 8, flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" },
+  title:     { color: C.text, fontSize: 20, fontWeight: "700" },
+  subtitle:  { color: C.text2, fontSize: 12, marginTop: 2 },
+  syncLabel: { color: C.text3, fontSize: 10, marginTop: 6 },
 
   statsRow: {
     flexDirection: "row", marginHorizontal: 16, marginBottom: 10,
-    backgroundColor: "#111827", borderRadius: 12, padding: 12,
-    borderWidth: 1, borderColor: "#1f2937",
+    backgroundColor: C.card, borderRadius: 12, padding: 12,
+    borderWidth: 1, borderColor: C.border,
   },
 
   perfRow:   { flexDirection: "row", gap: 8, marginHorizontal: 16, marginBottom: 8, flexWrap: "wrap" },
@@ -340,11 +312,11 @@ const styles = StyleSheet.create({
   perfText:  { fontSize: 11, fontWeight: "700" },
 
   filterRow: { flexDirection: "row", paddingHorizontal: 12, gap: 6, marginBottom: 10, flexWrap: "wrap" },
-  chip:      { borderWidth: 1, borderColor: "#334155", borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5 },
+  chip:      { borderWidth: 1, borderColor: C.border, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5 },
   chipText:  { fontSize: 11, fontWeight: "600" },
 
   list:       { paddingHorizontal: 12, paddingBottom: 20 },
   empty:      { paddingTop: 80, alignItems: "center", paddingHorizontal: 32 },
-  emptyTitle: { color: "#4b5563", fontSize: 18, fontWeight: "700", marginBottom: 10 },
-  emptyHint:  { color: "#374151", fontSize: 13, textAlign: "center", lineHeight: 20 },
+  emptyTitle: { color: C.text2, fontSize: 18, fontWeight: "700", marginBottom: 10 },
+  emptyHint:  { color: C.text3, fontSize: 13, textAlign: "center", lineHeight: 20 },
 });

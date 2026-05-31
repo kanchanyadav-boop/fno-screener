@@ -1,8 +1,8 @@
 import React, { useState, useRef, useCallback } from "react";
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity,
-  SafeAreaView, RefreshControl,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { FNO_STOCKS } from "../../lib/fnoStocks";
 import { generateTradeTip } from "../../lib/tradeTip";
@@ -13,71 +13,23 @@ import { logTips } from "../../lib/tipLog";
 interface Row { symbol: string; price: number; changePct: number; tip: TradeTip }
 type FilterKey = "ALL" | "BUY" | "NEAR" | "WATCH";
 
-const SIGNAL_COLOR: Record<string, string> = {
-  BUY: "#4ade80", NEAR: "#fbbf24", WATCH: "#60a5fa",
+const C = {
+  bg: "#f8fafc", card: "#ffffff", border: "#e2e8f0",
+  text: "#0f172a", text2: "#64748b", text3: "#94a3b8",
+  long: "#16a34a", short: "#dc2626", near: "#d97706", blue: "#2563eb",
+  longBg: "#dcfce7", shortBg: "#fee2e2", nearBg: "#fef3c7", blueBg: "#dbeafe",
 };
-const DIR_COLOR = { long: "#4ade80", short: "#f87171" };
 
-// ── styles defined first so TipCard can reference them ───────────────────────
-const styles = StyleSheet.create({
-  safe:     { flex: 1, backgroundColor: "#0f172a" },
-  header:   { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 },
-  title:    { color: "#f1f5f9", fontSize: 20, fontWeight: "700" },
-  subtitle: { color: "#64748b", fontSize: 12, marginTop: 2 },
-  px:       { paddingHorizontal: 16, marginBottom: 10 },
+const SIGNAL_COLOR: Record<string, string> = {
+  BUY: C.long, NEAR: C.near, WATCH: C.blue,
+};
+const DIR_COLOR = { long: C.long, short: C.short };
 
-  scanBtn:     { backgroundColor: "#1e40af", borderRadius: 12, paddingVertical: 13, alignItems: "center" },
-  scanBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
-  stopBtn:     { backgroundColor: "#7f1d1d", borderRadius: 12, paddingVertical: 13, alignItems: "center" },
-  stopBtnText: { color: "#fca5a5", fontWeight: "700", fontSize: 14 },
-
-  progressBg:   { height: 3, backgroundColor: "#1e293b", borderRadius: 2, marginBottom: 4 },
-  progressFill: { height: "100%", backgroundColor: "#3b82f6", borderRadius: 2 },
-  progressRow:  { flexDirection: "row", justifyContent: "space-between" },
-  progressText: { color: "#64748b", fontSize: 11 },
-  foundText:    { color: "#4ade80", fontSize: 11, fontWeight: "600" },
-
-  filterRow:       { flexDirection: "row", paddingHorizontal: 12, gap: 6, marginBottom: 10, flexWrap: "wrap" },
-  filterChip:      { borderWidth: 1, borderColor: "#334155", borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5 },
-  filterChipActive:{ backgroundColor: "#1e3a5f", borderColor: "#3b82f6" },
-  filterText:      { color: "#64748b", fontSize: 11, fontWeight: "600" },
-  filterTextActive:{ color: "#93c5fd" },
-
-  list: { paddingHorizontal: 12, paddingBottom: 20 },
-
-  card: {
-    backgroundColor: "#111827", borderRadius: 14, padding: 14, marginBottom: 10,
-    borderWidth: 1, borderColor: "#1f2937", borderLeftWidth: 4,
-  },
-  cardRow:    { flexDirection: "row", justifyContent: "space-between", marginBottom: 10 },
-  cardLeft:   { flexDirection: "row", alignItems: "center", gap: 6, flex: 1, flexWrap: "wrap" },
-  cardSymbol: { color: "#f1f5f9", fontFamily: "monospace", fontWeight: "700", fontSize: 15 },
-  dirTag:     { borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 },
-  dirTagText: { fontSize: 9, fontWeight: "700" },
-  sigTag:     { borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 },
-  sigTagText: { fontSize: 11, fontWeight: "700" },
-  confTag:    { borderRadius: 5, paddingHorizontal: 5, paddingVertical: 2, backgroundColor: "#1f2937" },
-  confText:   { color: "#94a3b8", fontSize: 9 },
-  price:      { color: "#f1f5f9", fontFamily: "monospace", fontWeight: "600", fontSize: 13, textAlign: "right" },
-  chg:        { fontFamily: "monospace", fontSize: 11, textAlign: "right", marginTop: 1 },
-  levelsRow:  { flexDirection: "row", justifyContent: "space-between", marginBottom: 8 },
-  levelCol:   { alignItems: "center", flex: 1 },
-  levelLabel: { color: "#6b7280", fontSize: 9, textTransform: "uppercase", letterSpacing: 0.4 },
-  levelValue: { fontFamily: "monospace", fontSize: 12, fontWeight: "700", marginTop: 2 },
-  cardFooter: { flexDirection: "row", justifyContent: "space-between" },
-  footerGray: { color: "#4b5563", fontSize: 10 },
-  tapHint:    { color: "#1d4ed8", fontSize: 9, textAlign: "right", marginTop: 6 },
-
-  empty:     { paddingTop: 80, alignItems: "center", paddingHorizontal: 32 },
-  emptyText: { color: "#4b5563", fontSize: 13, textAlign: "center", lineHeight: 20 },
-});
-
-// ── TipCard defined before ScreenerTab ────────────────────────────────────────
 function TipCard({ row: r }: { row: Row }) {
   const tip = r.tip;
-  const sigColor = SIGNAL_COLOR[tip.signal] ?? "#94a3b8";
+  const sigColor = SIGNAL_COLOR[tip.signal] ?? C.text3;
   const dirColor = DIR_COLOR[tip.direction];
-  const chgColor = r.changePct >= 0 ? "#4ade80" : "#f87171";
+  const chgColor = r.changePct >= 0 ? C.long : C.short;
   const isShort = tip.direction === "short";
   const distLabel = tip.bouncingFromZone
     ? (isShort ? "Rejecting zone" : "Bouncing zone")
@@ -85,20 +37,19 @@ function TipCard({ row: r }: { row: Row }) {
       ? `${Math.abs(tip.distToZonePct).toFixed(1)}% inside`
       : `${tip.distToZonePct.toFixed(1)}% ${isShort ? "below" : "above"}`;
 
-  const handlePress = () => {
-    router.push({ pathname: "/(tabs)/search", params: { symbol: r.symbol } } as any);
-  };
-
   return (
-    <TouchableOpacity activeOpacity={0.75} onPress={handlePress}>
+    <TouchableOpacity
+      activeOpacity={0.75}
+      onPress={() => router.push({ pathname: "/(tabs)/search", params: { symbol: r.symbol } } as any)}
+    >
       <View style={[styles.card, { borderLeftColor: sigColor }]}>
         <View style={styles.cardRow}>
           <View style={styles.cardLeft}>
             <Text style={styles.cardSymbol}>{r.symbol}</Text>
-            <View style={[styles.dirTag, { backgroundColor: isShort ? "#450a0a" : "#14532d" }]}>
+            <View style={[styles.dirTag, { backgroundColor: isShort ? C.shortBg : C.longBg }]}>
               <Text style={[styles.dirTagText, { color: dirColor }]}>{isShort ? "SHORT" : "LONG"}</Text>
             </View>
-            <View style={[styles.sigTag, { backgroundColor: sigColor + "22" }]}>
+            <View style={[styles.sigTag, { backgroundColor: sigColor + "18" }]}>
               <Text style={[styles.sigTagText, { color: sigColor }]}>
                 {tip.signal === "BUY" ? (isShort ? "SELL" : "BUY") : tip.signal}
               </Text>
@@ -118,26 +69,24 @@ function TipCard({ row: r }: { row: Row }) {
         <View style={styles.levelsRow}>
           {(["Entry", "Target", "Stop"] as const).map((label) => {
             const val = label === "Entry" ? tip.entry : label === "Target" ? tip.target : tip.stopLoss;
-            const col = label === "Entry" ? "#60a5fa" : label === "Target" ? (isShort ? "#f87171" : "#4ade80") : "#f87171";
-            const display = val >= 1000 ? (val / 1000).toFixed(1) + "k" : val.toFixed(0);
+            const col = label === "Entry" ? C.blue : label === "Target" ? (isShort ? C.short : C.long) : C.short;
             return (
               <View key={label} style={styles.levelCol}>
                 <Text style={styles.levelLabel}>{label}</Text>
-                <Text style={[styles.levelValue, { color: col }]}>₹{display}</Text>
+                <Text style={[styles.levelValue, { color: col }]}>₹{val.toFixed(2)}</Text>
               </View>
             );
           })}
           <View style={styles.levelCol}>
             <Text style={styles.levelLabel}>R:R</Text>
-            <Text style={[styles.levelValue, { color: "#a3a3a3" }]}>1:{tip.riskReward.toFixed(1)}</Text>
+            <Text style={[styles.levelValue, { color: C.text3 }]}>1:{tip.riskReward.toFixed(1)}</Text>
           </View>
         </View>
 
         <View style={styles.cardFooter}>
           <Text style={styles.footerGray}>{distLabel}</Text>
           <Text style={styles.footerGray}>
-            Zone ₹{tip.zone.bottom >= 1000 ? (tip.zone.bottom / 1000).toFixed(1) + "k" : tip.zone.bottom.toFixed(0)}
-            –{tip.zone.top >= 1000 ? (tip.zone.top / 1000).toFixed(1) + "k" : tip.zone.top.toFixed(0)}
+            Zone ₹{tip.zone.bottom.toFixed(2)}–{tip.zone.top.toFixed(2)}
           </Text>
         </View>
         <Text style={styles.tapHint}>Tap to open chart →</Text>
@@ -146,7 +95,6 @@ function TipCard({ row: r }: { row: Row }) {
   );
 }
 
-// ── Main screen ───────────────────────────────────────────────────────────────
 export default function ScreenerTab() {
   const [rows,     setRows]     = useState<Row[]>([]);
   const [scanning, setScanning] = useState(false);
@@ -183,7 +131,6 @@ export default function ScreenerTab() {
     }
 
     setScanning(false);
-    // Log only tips where price is at the entry zone (BUY signal = within ±2% of entry)
     const atZone = collected.filter((r) => r.tip.signal === "BUY");
     if (atZone.length > 0) {
       logTips(atZone.map((r) => ({ symbol: r.symbol, tip: r.tip }))).catch(() => {});
@@ -199,7 +146,7 @@ export default function ScreenerTab() {
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
         <Text style={styles.title}>F&O Trade Tips</Text>
-        <Text style={styles.subtitle}>Demand &amp; supply zone setups · Daily chart</Text>
+        <Text style={styles.subtitle}>Demand & supply zone setups · Daily chart</Text>
       </View>
 
       <View style={styles.px}>
@@ -209,7 +156,7 @@ export default function ScreenerTab() {
           </TouchableOpacity>
         ) : (
           <TouchableOpacity style={styles.scanBtn} onPress={runScan}>
-            <Text style={styles.scanBtnText}>Scan All F&amp;O ↗</Text>
+            <Text style={styles.scanBtnText}>Scan All F&O ↗</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -230,17 +177,20 @@ export default function ScreenerTab() {
 
       {rows.length > 0 && (
         <View style={styles.filterRow}>
-          {(["ALL", "BUY", "NEAR", "WATCH"] as FilterKey[]).map((f) => (
-            <TouchableOpacity
-              key={f}
-              style={[styles.filterChip, filter === f && styles.filterChipActive]}
-              onPress={() => setFilter(f)}
-            >
-              <Text style={[styles.filterText, filter === f && styles.filterTextActive]}>
-                {f} ({countFor(f)})
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {(["ALL", "BUY", "NEAR", "WATCH"] as FilterKey[]).map((f) => {
+            const color = f === "ALL" ? C.blue : f === "BUY" ? C.long : f === "NEAR" ? C.near : C.blue;
+            return (
+              <TouchableOpacity
+                key={f}
+                style={[styles.filterChip, filter === f && { borderColor: color, backgroundColor: color + "18" }]}
+                onPress={() => setFilter(f)}
+              >
+                <Text style={[styles.filterText, { color: filter === f ? color : C.text2 }]}>
+                  {f} ({countFor(f)})
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       )}
 
@@ -248,7 +198,7 @@ export default function ScreenerTab() {
         data={filtered}
         keyExtractor={(r) => r.symbol}
         contentContainerStyle={styles.list}
-        refreshControl={<RefreshControl refreshing={false} tintColor="#3b82f6" />}
+        refreshControl={<RefreshControl refreshing={false} tintColor={C.blue} />}
         renderItem={({ item }) => <TipCard row={item} />}
         ListEmptyComponent={
           !scanning ? (
@@ -267,3 +217,55 @@ export default function ScreenerTab() {
 }
 
 function delay(ms: number) { return new Promise((r) => setTimeout(r, ms)); }
+
+const styles = StyleSheet.create({
+  safe:     { flex: 1, backgroundColor: C.bg },
+  header:   { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 8 },
+  title:    { color: C.text, fontSize: 20, fontWeight: "700" },
+  subtitle: { color: C.text2, fontSize: 12, marginTop: 2 },
+  px:       { paddingHorizontal: 16, marginBottom: 10 },
+
+  scanBtn:     { backgroundColor: C.blue, borderRadius: 12, paddingVertical: 13, alignItems: "center" },
+  scanBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
+  stopBtn:     { backgroundColor: C.shortBg, borderRadius: 12, paddingVertical: 13, alignItems: "center" },
+  stopBtnText: { color: C.short, fontWeight: "700", fontSize: 14 },
+
+  progressBg:   { height: 3, backgroundColor: "#e2e8f0", borderRadius: 2, marginBottom: 4 },
+  progressFill: { height: "100%", backgroundColor: C.blue, borderRadius: 2 },
+  progressRow:  { flexDirection: "row", justifyContent: "space-between" },
+  progressText: { color: C.text2, fontSize: 11 },
+  foundText:    { color: C.long, fontSize: 11, fontWeight: "600" },
+
+  filterRow:  { flexDirection: "row", paddingHorizontal: 12, gap: 6, marginBottom: 10, flexWrap: "wrap" },
+  filterChip: { borderWidth: 1, borderColor: "#e2e8f0", borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5 },
+  filterText: { fontSize: 11, fontWeight: "600" },
+
+  list: { paddingHorizontal: 12, paddingBottom: 20 },
+
+  card: {
+    backgroundColor: C.card, borderRadius: 14, padding: 14, marginBottom: 10,
+    borderWidth: 1, borderColor: C.border, borderLeftWidth: 4,
+    shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
+  },
+  cardRow:    { flexDirection: "row", justifyContent: "space-between", marginBottom: 10 },
+  cardLeft:   { flexDirection: "row", alignItems: "center", gap: 6, flex: 1, flexWrap: "wrap" },
+  cardSymbol: { color: C.text, fontFamily: "monospace", fontWeight: "700", fontSize: 15 },
+  dirTag:     { borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 },
+  dirTagText: { fontSize: 9, fontWeight: "700" },
+  sigTag:     { borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 },
+  sigTagText: { fontSize: 11, fontWeight: "700" },
+  confTag:    { borderRadius: 5, paddingHorizontal: 5, paddingVertical: 2, backgroundColor: "#f1f5f9" },
+  confText:   { color: C.text2, fontSize: 9 },
+  price:      { color: C.text, fontFamily: "monospace", fontWeight: "600", fontSize: 13, textAlign: "right" },
+  chg:        { fontFamily: "monospace", fontSize: 11, textAlign: "right", marginTop: 1 },
+  levelsRow:  { flexDirection: "row", justifyContent: "space-between", marginBottom: 8 },
+  levelCol:   { alignItems: "center", flex: 1 },
+  levelLabel: { color: C.text3, fontSize: 9, textTransform: "uppercase", letterSpacing: 0.4 },
+  levelValue: { fontFamily: "monospace", fontSize: 12, fontWeight: "700", marginTop: 2 },
+  cardFooter: { flexDirection: "row", justifyContent: "space-between" },
+  footerGray: { color: C.text3, fontSize: 10 },
+  tapHint:    { color: C.blue, fontSize: 9, textAlign: "right", marginTop: 6 },
+
+  empty:     { paddingTop: 80, alignItems: "center", paddingHorizontal: 32 },
+  emptyText: { color: C.text3, fontSize: 13, textAlign: "center", lineHeight: 20 },
+});
