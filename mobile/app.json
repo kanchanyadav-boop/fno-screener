@@ -46,6 +46,13 @@
     "scheme": "fno-screener",
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "dca7b85c-f65a-43f9-875e-9807e32fb2b7"
+      }
+    },
+    "owner": "kanchan.yadav"
   }
 }
