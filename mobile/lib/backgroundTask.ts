@@ -3,7 +3,6 @@ import * as TaskManager from "expo-task-manager";
 import { fetchPrices } from "./api";
 import { loadSetups, updateSetupPrices, getAlertedIds, markAlerted, clearAlert } from "./storage";
 import { loadTipLog, updateTipLogPrices } from "./tipLog";
-import { runAutoScan } from "./autoScanner";
 import {
   sendEntryAlert,
   sendTargetAlert,
@@ -13,18 +12,13 @@ import {
 export const PRICE_CHECK_TASK = "fno-price-check";
 
 // ─── Background task definition ───────────────────────────────────────────────
-// Runs every ~15 min when app is closed (iOS minimum; Android is more reliable).
-// Uses a 50ms inter-stock delay so the full scan finishes within ~9s — safely
-// inside iOS's ~30s background execution budget.
+// Runs every ~15 min when app is closed (iOS gives ~30s budget).
+// We skip the full FNO scan here (200+ stocks = too slow) — that runs
+// via the Vercel cron job instead. We only check watchlist + tip log prices.
 
 TaskManager.defineTask(PRICE_CHECK_TASK, async () => {
   try {
-    // 1. Auto-scan all FNO stocks for new entry-zone tips
-    await runAutoScan(50, (sym, direction, entry, price) => {
-      sendEntryAlert(sym, direction, entry, price).catch(() => {});
-    });
-
-    // 2. Update watchlist setup prices + notify on target/SL hits
+    // 1. Update watchlist setup prices + notify on target/SL hits
     const setups = await loadSetups();
     const activeSetups = setups.filter((s) => s.status === "active");
     if (activeSetups.length > 0) {

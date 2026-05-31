@@ -73,12 +73,15 @@ async function sendPushBatch(messages: PushMessage[]) {
 
 export const maxDuration = 60;
 
-function isMarketOpen(): boolean {
-  const now = new Date();
-  const ist = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
-  const day  = ist.getUTCDay();
-  const mins = ist.getUTCHours() * 60 + ist.getUTCMinutes();
-  return day >= 1 && day <= 5 && mins >= 9 * 60 && mins < 16 * 60;
+// In-memory dedup — persists across warm Lambda invocations (Vercel keeps
+// functions warm between cron calls). Resets on cold start, which is fine
+// since that only happens after a long idle gap.
+const _sent = new Map<string, number>(); // key -> sent timestamp
+const FOUR_HOURS = 4 * 60 * 60 * 1000;
+
+function shouldNotify(key: string): boolean {
+  const last = _sent.get(key);
+  return !last || Date.now() - last > FOUR_HOURS;
 }
 
 export async function GET(req: NextRequest) {
@@ -107,6 +110,10 @@ export async function GET(req: NextRequest) {
         const tip = generateTradeTip(data.candles);
         if (!tip || tip.signal !== "BUY") return;
         if (Math.abs(tip.distToZonePct) > 2) return;
+
+        const key = `${sym}_${tip.zone.anchorDate}_${tip.direction}`;
+        if (!shouldNotify(key)) return;
+        _sent.set(key, Date.now());
 
         newTips.push({ symbol: sym, direction: tip.direction, entry: tip.entry, price: data.price });
       })
