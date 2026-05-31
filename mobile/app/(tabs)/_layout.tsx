@@ -23,7 +23,7 @@ export default function TabsLayout() {
         options={{
           title: "Zone Tips",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="analytics-outline" size={size} color={color} />
+            <Ionicons name="stats-chart" size={size} color={color} />
           ),
         }}
       />
@@ -32,7 +32,7 @@ export default function TabsLayout() {
         options={{
           title: "Trends",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="trending-up-outline" size={size} color={color} />
+            <Ionicons name="trending-up" size={size} color={color} />
           ),
         }}
       />
@@ -41,7 +41,7 @@ export default function TabsLayout() {
         options={{
           title: "Add Setup",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="add-circle-outline" size={size} color={color} />
+            <Ionicons name="add-circle" size={size} color={color} />
           ),
         }}
       />
@@ -50,7 +50,7 @@ export default function TabsLayout() {
         options={{
           title: "Watchlist",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="bookmark-outline" size={size} color={color} />
+            <Ionicons name="eye" size={size} color={color} />
           ),
         }}
       />
@@ -59,7 +59,7 @@ export default function TabsLayout() {
         options={{
           title: "Performance",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="trophy-outline" size={size} color={color} />
+            <Ionicons name="podium" size={size} color={color} />
           ),
         }}
       />
