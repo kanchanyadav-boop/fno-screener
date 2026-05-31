@@ -1,0 +1,51 @@
+{
+  "expo": {
+    "name": "FNO Screener",
+    "slug": "fno-screener",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#0f172a"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.fno.screener",
+      "infoPlist": {
+        "NSUserNotificationUsageDescription": "FNO Screener alerts you when price enters your trade zone, hits target, or stops out."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0f172a"
+      },
+      "package": "com.fno.screener",
+      "permissions": [
+        "RECEIVE_BOOT_COMPLETED",
+        "SCHEDULE_EXACT_ALARM",
+        "USE_EXACT_ALARM"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-asset",
+      "expo-font",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#0f172a",
+          "sounds": [],
+          "mode": "production"
+        }
+      ]
+    ],
+    "scheme": "fno-screener",
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
