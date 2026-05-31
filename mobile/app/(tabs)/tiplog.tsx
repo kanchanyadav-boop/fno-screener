@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl,
 } from "react-native";
@@ -60,9 +60,9 @@ function LogCard({ entry: e }: { entry: TipLogEntry }) {
           </View>
         </View>
         <View style={cs.right}>
-          {e.lastPrice != null && (
-            <Text style={cs.price}>₹{e.lastPrice.toFixed(2)}</Text>
-          )}
+          <Text style={[cs.price, e.lastPrice == null && { color: C.text3 }]}>
+            {e.lastPrice != null ? `₹${e.lastPrice.toFixed(2)}` : (e.status === "active" ? "fetching…" : "–")}
+          </Text>
           {pnl != null && (
             <Text style={[cs.pnl, { color: pnlColor }]}>
               {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)}%
@@ -128,34 +128,50 @@ export default function TipLogTab() {
   const [refreshing, setRefreshing] = useState(false);
   const [filter,     setFilter]     = useState<Filter>("all");
   const [lastSync,   setLastSync]   = useState<Date | null>(null);
+  const entriesRef = useRef<TipLogEntry[]>([]);
 
-  const loadAndSync = useCallback(async (silent = false) => {
-    if (!silent) setRefreshing(true);
+  // Full load from storage — on focus and pull-to-refresh
+  const loadFromStorage = useCallback(async () => {
     try {
-      const current = await loadTipLog();
-      setEntries(current);
-      const activeSyms = [...new Set(
-        current.filter((e) => e.status === "active").map((e) => e.symbol)
-      )];
-      if (activeSyms.length > 0) {
-        const prices = await fetchPrices(activeSyms);
-        if (Object.keys(prices).length > 0) {
-          const updated = await updateTipLogPrices(prices);
-          setEntries(updated);
-          setLastSync(new Date());
-        }
-      }
-    } catch { /* silent */ } finally {
-      setRefreshing(false);
-    }
+      const data = await loadTipLog();
+      entriesRef.current = data;
+      setEntries(data);
+    } catch { /* silent */ }
   }, []);
+
+  // In-memory price tick — no AsyncStorage read, just fetch + update state directly
+  const tickPrices = useCallback(async () => {
+    const current = entriesRef.current;
+    const activeSyms = [...new Set(
+      current.filter((e) => e.status === "active").map((e) => e.symbol)
+    )];
+    if (!activeSyms.length) return;
+
+    try {
+      const prices = await fetchPrices(activeSyms);
+      if (!Object.keys(prices).length) return;
+
+      // updateTipLogPrices persists to storage and returns full updated list
+      const updated = await updateTipLogPrices(prices);
+      entriesRef.current = updated;
+      setEntries(updated);
+      setLastSync(new Date());
+    } catch { /* silent */ }
+  }, []);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadFromStorage();
+    await tickPrices();
+    setRefreshing(false);
+  }, [loadFromStorage, tickPrices]);
 
   useFocusEffect(
     useCallback(() => {
-      loadAndSync(true);
-      const id = setInterval(() => loadAndSync(true), 5_000);
+      loadFromStorage().then(tickPrices);
+      const id = setInterval(tickPrices, 5_000);
       return () => clearInterval(id);
-    }, [loadAndSync])
+    }, [loadFromStorage, tickPrices])
   );
 
   const filtered = entries.filter((e) => filter === "all" || e.status === filter);
@@ -242,7 +258,7 @@ export default function TipLogTab() {
         keyExtractor={(e) => e.id}
         contentContainerStyle={s.list}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => loadAndSync(false)} tintColor={C.blue} />
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={C.blue} />
         }
         renderItem={({ item }) => <LogCard entry={item} />}
         ListEmptyComponent={
