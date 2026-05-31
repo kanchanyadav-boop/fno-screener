@@ -30,13 +30,10 @@ const STATUS_LABEL: Record<TipLogEntry["status"], string> = {
   expired: "Expired",
 };
 
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const d = Math.floor(diff / 86400000);
-  const h = Math.floor((diff % 86400000) / 3600000);
-  if (d > 0) return `${d}d ago`;
-  if (h > 0) return `${h}h ago`;
-  return "Just now";
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" })
+    + "  " + d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
 function LogCard({ entry: e }: { entry: TipLogEntry }) {
@@ -91,7 +88,7 @@ function LogCard({ entry: e }: { entry: TipLogEntry }) {
       </View>
 
       <View style={cs.footer}>
-        <Text style={cs.footerGray}>{timeAgo(e.loggedAt)} · {e.signal}</Text>
+        <Text style={cs.footerGray}>{formatDate(e.loggedAt)} · {e.signal}</Text>
         {e.status !== "active" && e.exitPrice != null ? (
           <Text style={[cs.footerGray, { color: statusColor }]}>
             Exit ₹{e.exitPrice.toFixed(2)}
@@ -156,7 +153,7 @@ export default function TipLogTab() {
   useFocusEffect(
     useCallback(() => {
       loadAndSync(true);
-      const id = setInterval(() => loadAndSync(true), 30_000);
+      const id = setInterval(() => loadAndSync(true), 5_000);
       return () => clearInterval(id);
     }, [loadAndSync])
   );
@@ -187,10 +184,15 @@ export default function TipLogTab() {
           <Text style={s.title}>Tip Performance</Text>
           <Text style={s.subtitle}>All auto-logged tips · latest first</Text>
         </View>
-        {lastSync && (
-          <Text style={s.syncLabel}>
-            {lastSync.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
-          </Text>
+        {active > 0 && (
+          <View style={s.liveRow}>
+            <View style={s.liveDot} />
+            <Text style={s.syncLabel}>
+              {lastSync
+                ? lastSync.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+                : "syncing…"}
+            </Text>
+          </View>
         )}
       </View>
 
@@ -299,7 +301,9 @@ const s = StyleSheet.create({
   header:    { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 8, flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" },
   title:     { color: C.text, fontSize: 20, fontWeight: "700" },
   subtitle:  { color: C.text2, fontSize: 12, marginTop: 2 },
-  syncLabel: { color: C.text3, fontSize: 10, marginTop: 6 },
+  syncLabel: { color: C.text3, fontSize: 10 },
+  liveRow:   { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6 },
+  liveDot:   { width: 6, height: 6, borderRadius: 3, backgroundColor: C.long },
 
   statsRow: {
     flexDirection: "row", marginHorizontal: 16, marginBottom: 10,
