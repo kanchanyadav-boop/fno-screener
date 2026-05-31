@@ -87,10 +87,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (!isMarketOpen()) {
-    return NextResponse.json({ message: "Market closed — scan skipped", skipped: true });
-  }
-
   // Read push tokens from env var (comma-separated, e.g. "ExponentPushToken[xxx],ExponentPushToken[yyy]")
   const rawTokens = process.env.PUSH_TOKEN ?? "";
   const tokens = rawTokens.split(",").map((t) => t.trim()).filter(Boolean);
