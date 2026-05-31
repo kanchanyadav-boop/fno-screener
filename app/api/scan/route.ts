@@ -1,17 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Redis } from "@upstash/redis";
 import { FNO_STOCKS } from "@/app/lib/fnoStocks";
 import { generateTradeTip } from "@/app/lib/tradeTip";
 import { Candle } from "@/app/lib/pattern";
-
-// ─── Redis ────────────────────────────────────────────────────────────────────
-
-function getRedis() {
-  const url   = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token) throw new Error("Upstash Redis not configured");
-  return new Redis({ url, token });
-}
 
 // ─── Yahoo Finance ────────────────────────────────────────────────────────────
 
@@ -65,7 +55,6 @@ interface PushMessage {
 }
 
 async function sendPushBatch(messages: PushMessage[]) {
-  // Expo Push API accepts up to 100 messages per request
   const CHUNK = 100;
   for (let i = 0; i < messages.length; i += CHUNK) {
     await fetch("https://exp.host/--/api/v2/push/send", {
@@ -82,22 +71,17 @@ async function sendPushBatch(messages: PushMessage[]) {
 
 // ─── Cron handler ─────────────────────────────────────────────────────────────
 
-export const maxDuration = 60; // seconds (Vercel Pro)
+export const maxDuration = 60;
 
-// Returns true if current time is within NSE market hours (Mon–Fri, 9:00–16:00 IST)
 function isMarketOpen(): boolean {
   const now = new Date();
-  // IST = UTC + 5h 30m
   const ist = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
-  const day  = ist.getUTCDay();                              // 0=Sun … 6=Sat
+  const day  = ist.getUTCDay();
   const mins = ist.getUTCHours() * 60 + ist.getUTCMinutes();
-  const isWeekday     = day >= 1 && day <= 5;
-  const isDuringHours = mins >= 9 * 60 && mins < 16 * 60;  // 09:00–16:00
-  return isWeekday && isDuringHours;
+  return day >= 1 && day <= 5 && mins >= 9 * 60 && mins < 16 * 60;
 }
 
 export async function GET(req: NextRequest) {
-  // Vercel automatically sets Authorization: Bearer <CRON_SECRET> on cron calls
   const auth = req.headers.get("authorization");
   if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -107,15 +91,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ message: "Market closed — scan skipped", skipped: true });
   }
 
-  const redis = getRedis();
-
-  // Load registered device tokens
-  const tokens: string[] = await redis.smembers("fno:push_tokens");
+  // Read push tokens from env var (comma-separated, e.g. "ExponentPushToken[xxx],ExponentPushToken[yyy]")
+  const rawTokens = process.env.PUSH_TOKEN ?? "";
+  const tokens = rawTokens.split(",").map((t) => t.trim()).filter(Boolean);
   if (!tokens.length) {
-    return NextResponse.json({ message: "No devices registered", scanned: 0, newTips: 0 });
+    return NextResponse.json({ message: "No PUSH_TOKEN configured", scanned: 0, newTips: 0 });
   }
 
-  // Scan all FNO stocks in batches of 10 (avoids Yahoo rate limits)
   const newTips: { symbol: string; direction: "long" | "short"; entry: number; price: number }[] = [];
   const BATCH = 10;
 
@@ -130,18 +112,11 @@ export async function GET(req: NextRequest) {
         if (!tip || tip.signal !== "BUY") return;
         if (Math.abs(tip.distToZonePct) > 2) return;
 
-        // 24-hour dedup — don't re-notify for the same zone entry
-        const key = `fno:sent:${sym}_${tip.zone.anchorDate}_${tip.direction}`;
-        const already = await redis.get(key);
-        if (already) return;
-
-        await redis.set(key, "1", { ex: 86400 });
         newTips.push({ symbol: sym, direction: tip.direction, entry: tip.entry, price: data.price });
       })
     );
   }
 
-  // Send push notifications to all registered devices
   if (newTips.length > 0) {
     const messages: PushMessage[] = tokens.flatMap((to) =>
       newTips.map((tip) => ({

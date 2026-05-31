@@ -46,14 +46,6 @@ export async function fetchPrice(symbol: string): Promise<{ price: number; chang
   return { price: data.price, changePct: data.changePct ?? 0 };
 }
 
-// Register this device's Expo push token with the Vercel backend
-export async function registerPushToken(token: string): Promise<void> {
-  await fetch(`${__DEV__ ? DEV_URL : VERCEL_URL}/api/register-token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token }),
-  });
-}
 
 export async function fetchPrices(
   symbols: string[]
