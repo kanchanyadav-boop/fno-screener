@@ -1,4 +1,4 @@
-import * as BackgroundTask from "expo-background-task";
+import * as BackgroundFetch from "expo-background-fetch";
 import * as TaskManager from "expo-task-manager";
 import { fetchPrices } from "./api";
 import { loadSetups, updateSetupPrices, getAlertedIds, markAlerted, clearAlert } from "./storage";
@@ -11,7 +11,6 @@ import {
 
 export const PRICE_CHECK_TASK = "fno-price-check";
 
-// ─── Background task definition ───────────────────────────────────────────────
 // Runs every ~15 min when app is closed.
 // Only checks watchlist + tip log prices — full FNO scan runs via Vercel cron.
 
@@ -62,9 +61,9 @@ TaskManager.defineTask(PRICE_CHECK_TASK, async () => {
       }
     }
 
-    return BackgroundTask.BackgroundTaskResult.Success;
+    return BackgroundFetch.BackgroundFetchResult.NewData;
   } catch {
-    return BackgroundTask.BackgroundTaskResult.Failed;
+    return BackgroundFetch.BackgroundFetchResult.Failed;
   }
 });
 
@@ -72,8 +71,10 @@ export async function registerBackgroundTask(): Promise<void> {
   try {
     const isRegistered = await TaskManager.isTaskRegisteredAsync(PRICE_CHECK_TASK);
     if (!isRegistered) {
-      await BackgroundTask.registerTaskAsync(PRICE_CHECK_TASK, {
+      await BackgroundFetch.registerTaskAsync(PRICE_CHECK_TASK, {
         minimumInterval: 15 * 60,
+        stopOnTerminate: false,
+        startOnBoot: true,
       });
     }
   } catch { /* silently fails in Expo Go — works in production build */ }
