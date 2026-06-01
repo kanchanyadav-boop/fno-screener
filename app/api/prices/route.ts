@@ -15,41 +15,39 @@ function toYahooSymbol(sym: string): string {
   return `${s}.NS`;
 }
 
+async function fetchOnePrice(sym: string) {
+  const yahooSym = toYahooSymbol(sym);
+  try {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSym}?interval=1d&range=2d`;
+    const res = await fetch(url, { headers: HEADERS, cache: "no-store" });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const meta = json?.chart?.result?.[0]?.meta;
+    if (!meta?.regularMarketPrice) return null;
+    const price: number = meta.regularMarketPrice;
+    const prevClose: number = meta.regularMarketPreviousClose ?? meta.chartPreviousClose ?? 0;
+    const change = price - prevClose;
+    const changePct = prevClose ? (change / prevClose) * 100 : 0;
+    return { price, prevClose, change, changePct };
+  } catch {
+    return null;
+  }
+}
+
 export async function GET(req: NextRequest) {
   const raw = req.nextUrl.searchParams.get("symbols") || "";
   if (!raw) return NextResponse.json({ error: "symbols required" }, { status: 400 });
 
-  const symbols = raw.split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
-  const yahooSyms = symbols.map(toYahooSymbol).join(",");
+  const symbols = raw.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean);
 
-  try {
-    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${yahooSyms}&fields=regularMarketPrice,regularMarketPreviousClose,chartPreviousClose,regularMarketChange,regularMarketChangePercent,regularMarketVolume,regularMarketTime`;
-    const res = await fetch(url, { headers: HEADERS, cache: "no-store" });
-    if (!res.ok) throw new Error(`Yahoo ${res.status}`);
+  const results = await Promise.all(
+    symbols.map(async (sym) => [sym, await fetchOnePrice(sym)] as const)
+  );
 
-    const json = await res.json();
-    const items: any[] = json?.quoteResponse?.result ?? [];
-
-    // Build a reverse map: yahoo symbol → original symbol
-    const yahooToOrig: Record<string, string> = {};
-    for (const s of symbols) yahooToOrig[toYahooSymbol(s)] = s;
-
-    const out: Record<string, { price: number; prevClose: number; change: number; changePct: number }> = {};
-    for (const item of items) {
-      const orig = yahooToOrig[item.symbol] ?? item.symbol.replace(".NS", "");
-      const prevCloseActual: number = item.regularMarketPreviousClose ?? item.chartPreviousClose ?? 0;
-      const price: number = item.regularMarketPrice ?? 0;
-      out[orig] = {
-        price,
-        prevClose: prevCloseActual,
-        change:    item.regularMarketChange ?? 0,
-        changePct: prevCloseActual ? ((price - prevCloseActual) / prevCloseActual) * 100 : 0,
-      };
-    }
-
-    return NextResponse.json(out);
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : "Unknown error";
-    return NextResponse.json({ error: msg }, { status: 500 });
+  const out: Record<string, { price: number; prevClose: number; change: number; changePct: number }> = {};
+  for (const [sym, data] of results) {
+    if (data) out[sym] = data;
   }
+
+  return NextResponse.json(out);
 }
